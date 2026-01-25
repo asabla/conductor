@@ -1,0 +1,238 @@
+// Copyright 2024 Conductor Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package conductor.v1;
+
+option go_package = "github.com/conductor/conductor/api/gen/conductor/v1;conductorv1";
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "conductor/v1/common.proto";
+
+// ResultService provides access to test results and artifacts from test runs.
+service ResultService {
+  // GetRunResults retrieves aggregated results for a specific test run.
+  rpc GetRunResults(GetRunResultsRequest) returns (GetRunResultsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/runs/{run_id}/results"
+    };
+  }
+
+  // ListTestResults returns a paginated list of individual test results.
+  rpc ListTestResults(ListTestResultsRequest) returns (ListTestResultsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/runs/{run_id}/results/tests"
+    };
+  }
+
+  // GetArtifact retrieves metadata for a specific artifact.
+  rpc GetArtifact(GetArtifactRequest) returns (GetArtifactResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/artifacts/{artifact_id}"
+    };
+  }
+
+  // GetArtifactDownloadURL generates a signed download URL for an artifact.
+  rpc GetArtifactDownloadURL(GetArtifactDownloadURLRequest) returns (GetArtifactDownloadURLResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/artifacts/{artifact_id}/download"
+    };
+  }
+
+  // ListArtifacts returns all artifacts for a specific run.
+  rpc ListArtifacts(ListArtifactsRequest) returns (ListArtifactsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/runs/{run_id}/artifacts"
+    };
+  }
+}
+
+// GetRunResultsRequest specifies which run to get results for.
+message GetRunResultsRequest {
+  // ID of the run to retrieve results for.
+  string run_id = 1;
+}
+
+// GetRunResultsResponse returns aggregated results for a run.
+message GetRunResultsResponse {
+  // ID of the run.
+  string run_id = 1;
+  // Overall run status.
+  RunStatus status = 2;
+  // Summary of test outcomes.
+  ResultSummary summary = 3;
+  // When the run started.
+  google.protobuf.Timestamp started_at = 4;
+  // When the run finished.
+  google.protobuf.Timestamp finished_at = 5;
+  // Total duration of the run in milliseconds.
+  int64 duration_ms = 6;
+  // Error message if the run failed due to infrastructure issues.
+  string error_message = 7;
+}
+
+// ResultSummary provides aggregate statistics for test results.
+message ResultSummary {
+  // Total number of tests executed.
+  int32 total = 1;
+  // Number of tests that passed.
+  int32 passed = 2;
+  // Number of tests that failed.
+  int32 failed = 3;
+  // Number of tests that were skipped.
+  int32 skipped = 4;
+  // Number of tests that encountered errors.
+  int32 errored = 5;
+  // Pass rate as a percentage (0-100).
+  double pass_rate = 6;
+}
+
+// ListTestResultsRequest specifies filtering and pagination for test results.
+message ListTestResultsRequest {
+  // ID of the run to list results for.
+  string run_id = 1;
+  // Filter by test status.
+  repeated TestStatus statuses = 2;
+  // Filter by suite name.
+  string suite_name = 3;
+  // Search by test name pattern.
+  string name_pattern = 4;
+  // Pagination parameters.
+  Pagination pagination = 5;
+  // Sort order for results.
+  TestResultSortOrder sort_order = 6;
+}
+
+// TestResultSortOrder specifies how to sort test results.
+enum TestResultSortOrder {
+  // Default: by test name alphabetically.
+  TEST_RESULT_SORT_ORDER_UNSPECIFIED = 0;
+  // Sort by test name alphabetically.
+  TEST_RESULT_SORT_ORDER_NAME_ASC = 1;
+  // Sort by test name reverse alphabetically.
+  TEST_RESULT_SORT_ORDER_NAME_DESC = 2;
+  // Sort by duration, longest first.
+  TEST_RESULT_SORT_ORDER_DURATION_DESC = 3;
+  // Sort by duration, shortest first.
+  TEST_RESULT_SORT_ORDER_DURATION_ASC = 4;
+  // Sort by status (failures first).
+  TEST_RESULT_SORT_ORDER_STATUS = 5;
+}
+
+// ListTestResultsResponse returns a paginated list of test results.
+message ListTestResultsResponse {
+  // List of test results.
+  repeated TestResult results = 1;
+  // Pagination response.
+  PaginationResponse pagination = 2;
+}
+
+// TestResult represents the outcome of a single test case.
+message TestResult {
+  // Unique identifier for this result.
+  string id = 1;
+  // ID of the run this result belongs to.
+  string run_id = 2;
+  // Name of the test as reported by the test framework.
+  string test_name = 3;
+  // Name of the test suite or class containing this test.
+  string suite_name = 4;
+  // Outcome status of the test.
+  TestStatus status = 5;
+  // Duration of test execution in milliseconds.
+  int64 duration_ms = 6;
+  // Error message if the test failed or errored.
+  string error_message = 7;
+  // Stack trace if available for failed tests.
+  string stack_trace = 8;
+  // Timestamp when the test started.
+  google.protobuf.Timestamp started_at = 9;
+  // Timestamp when the test completed.
+  google.protobuf.Timestamp finished_at = 10;
+  // Retry attempt number (0 for first attempt).
+  int32 retry_attempt = 11;
+  // Whether this test was retried.
+  bool was_retried = 12;
+  // Standard output captured during test execution.
+  string stdout = 13;
+  // Standard error captured during test execution.
+  string stderr = 14;
+  // Additional metadata from the test framework.
+  map<string, string> metadata = 15;
+}
+
+// GetArtifactRequest specifies which artifact to retrieve.
+message GetArtifactRequest {
+  // ID of the artifact.
+  string artifact_id = 1;
+}
+
+// GetArtifactResponse returns the artifact metadata.
+message GetArtifactResponse {
+  // The requested artifact.
+  Artifact artifact = 1;
+}
+
+// GetArtifactDownloadURLRequest requests a download URL for an artifact.
+message GetArtifactDownloadURLRequest {
+  // ID of the artifact.
+  string artifact_id = 1;
+  // Requested expiration time in seconds (max 3600). Default is 300.
+  int32 expiration_seconds = 2;
+}
+
+// GetArtifactDownloadURLResponse returns a signed download URL.
+message GetArtifactDownloadURLResponse {
+  // Signed download URL.
+  string download_url = 1;
+  // When the URL expires.
+  google.protobuf.Timestamp expires_at = 2;
+}
+
+// ListArtifactsRequest specifies filtering for artifacts.
+message ListArtifactsRequest {
+  // ID of the run to list artifacts for.
+  string run_id = 1;
+  // Filter by test ID (optional).
+  string test_id = 2;
+  // Filter by content type prefix (e.g., "image/", "text/").
+  string content_type_prefix = 3;
+  // Pagination parameters.
+  Pagination pagination = 4;
+}
+
+// ListArtifactsResponse returns a list of artifacts.
+message ListArtifactsResponse {
+  // List of artifacts.
+  repeated Artifact artifacts = 1;
+  // Pagination response.
+  PaginationResponse pagination = 2;
+}
+
+// Artifact represents a file produced during test execution.
+message Artifact {
+  // Unique identifier for this artifact.
+  string id = 1;
+  // ID of the run this artifact belongs to.
+  string run_id = 2;
+  // Human-readable name for the artifact.
+  string name = 3;
+  // Original file path relative to the workspace.
+  string path = 4;
+  // MIME content type of the artifact.
+  string content_type = 5;
+  // Size of the artifact in bytes.
+  int64 size_bytes = 6;
+  // Download URL (may be empty if not yet generated).
+  string url = 7;
+  // SHA256 checksum for integrity verification.
+  string checksum = 8;
+  // Test ID if this artifact is from a specific test.
+  string test_id = 9;
+  // When the artifact was created.
+  google.protobuf.Timestamp created_at = 10;
+  // Storage backend where artifact is stored (e.g., "s3", "minio").
+  string storage_backend = 11;
+}

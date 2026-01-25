@@ -1,0 +1,375 @@
+// Copyright 2024 Conductor Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package conductor.v1;
+
+option go_package = "github.com/conductor/conductor/api/gen/conductor/v1;conductorv1";
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "conductor/v1/common.proto";
+import "conductor/v1/agent_service.proto";
+
+// RunService manages test run lifecycle operations.
+service RunService {
+  // CreateRun creates a new test run and queues it for execution.
+  rpc CreateRun(CreateRunRequest) returns (CreateRunResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/runs"
+      body: "*"
+    };
+  }
+
+  // GetRun retrieves details of a specific test run.
+  rpc GetRun(GetRunRequest) returns (GetRunResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/runs/{run_id}"
+    };
+  }
+
+  // ListRuns returns a paginated list of test runs with optional filtering.
+  rpc ListRuns(ListRunsRequest) returns (ListRunsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/runs"
+    };
+  }
+
+  // CancelRun cancels a pending or running test run.
+  rpc CancelRun(CancelRunRequest) returns (CancelRunResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/runs/{run_id}/cancel"
+      body: "*"
+    };
+  }
+
+  // RetryRun creates a new run with the same parameters as a previous run.
+  rpc RetryRun(RetryRunRequest) returns (RetryRunResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/runs/{run_id}/retry"
+      body: "*"
+    };
+  }
+
+  // StreamRunLogs streams live logs from a running test.
+  rpc StreamRunLogs(StreamRunLogsRequest) returns (stream RunLogEntry) {
+    option (google.api.http) = {
+      get: "/api/v1/runs/{run_id}/logs/stream"
+    };
+  }
+
+  // GetRunLogs retrieves stored logs for a completed run.
+  rpc GetRunLogs(GetRunLogsRequest) returns (GetRunLogsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/runs/{run_id}/logs"
+    };
+  }
+}
+
+// CreateRunRequest specifies parameters for creating a new test run.
+message CreateRunRequest {
+  // Service ID to run tests for.
+  string service_id = 1;
+  // Git reference to test.
+  GitRef git_ref = 2;
+  // Specific test IDs to run. If empty, runs all tests for the service.
+  repeated string test_ids = 3;
+  // Tags to filter tests by.
+  repeated string tags = 4;
+  // Environment variables to set.
+  map<string, string> environment = 5;
+  // Priority for scheduling (higher = more urgent). Default is 0.
+  int32 priority = 6;
+  // Override execution type (uses service default if not specified).
+  ExecutionType execution_type = 7;
+  // Optional timeout override.
+  Duration timeout = 8;
+  // Trigger source for tracking.
+  RunTrigger trigger = 9;
+  // Labels for filtering and organization.
+  map<string, string> labels = 10;
+}
+
+// RunTrigger describes what initiated a test run.
+message RunTrigger {
+  // Type of trigger.
+  TriggerType type = 1;
+  // User who triggered (if manual).
+  string user = 2;
+  // CI/CD job ID (if CI triggered).
+  string ci_job_id = 3;
+  // CI/CD pipeline URL.
+  string ci_pipeline_url = 4;
+  // Webhook delivery ID (if webhook triggered).
+  string webhook_delivery_id = 5;
+}
+
+// TriggerType indicates what initiated a test run.
+enum TriggerType {
+  // Default value, should not be used.
+  TRIGGER_TYPE_UNSPECIFIED = 0;
+  // Manually triggered by a user.
+  TRIGGER_TYPE_MANUAL = 1;
+  // Triggered by a git webhook (push, PR).
+  TRIGGER_TYPE_WEBHOOK = 2;
+  // Triggered by a schedule.
+  TRIGGER_TYPE_SCHEDULED = 3;
+  // Triggered by CI/CD pipeline.
+  TRIGGER_TYPE_CI = 4;
+  // Triggered via API.
+  TRIGGER_TYPE_API = 5;
+  // Retried from a previous run.
+  TRIGGER_TYPE_RETRY = 6;
+}
+
+// CreateRunResponse returns the created test run.
+message CreateRunResponse {
+  // The created run.
+  Run run = 1;
+}
+
+// GetRunRequest specifies which run to retrieve.
+message GetRunRequest {
+  // ID of the run to retrieve.
+  string run_id = 1;
+  // Whether to include test results in the response.
+  bool include_results = 2;
+  // Whether to include artifacts in the response.
+  bool include_artifacts = 3;
+}
+
+// GetRunResponse returns the requested run.
+message GetRunResponse {
+  // The requested run.
+  Run run = 1;
+  // Test results if requested.
+  repeated RunTestResult results = 2;
+  // Artifacts if requested.
+  repeated RunArtifact artifacts = 3;
+}
+
+// ListRunsRequest specifies filtering and pagination for listing runs.
+message ListRunsRequest {
+  // Filter by service ID.
+  string service_id = 1;
+  // Filter by status.
+  repeated RunStatus statuses = 2;
+  // Filter by git branch.
+  string branch = 3;
+  // Filter by commit SHA.
+  string commit_sha = 4;
+  // Filter by time range.
+  TimeRange time_range = 5;
+  // Filter by labels.
+  map<string, string> labels = 6;
+  // Filter by trigger type.
+  TriggerType trigger_type = 7;
+  // Pagination parameters.
+  Pagination pagination = 8;
+  // Sort order.
+  RunSortOrder sort_order = 9;
+}
+
+// RunSortOrder specifies how to sort run results.
+enum RunSortOrder {
+  // Default: newest first.
+  RUN_SORT_ORDER_UNSPECIFIED = 0;
+  // Sort by creation time, newest first.
+  RUN_SORT_ORDER_CREATED_DESC = 1;
+  // Sort by creation time, oldest first.
+  RUN_SORT_ORDER_CREATED_ASC = 2;
+  // Sort by start time, newest first.
+  RUN_SORT_ORDER_STARTED_DESC = 3;
+  // Sort by start time, oldest first.
+  RUN_SORT_ORDER_STARTED_ASC = 4;
+  // Sort by completion time, newest first.
+  RUN_SORT_ORDER_FINISHED_DESC = 5;
+  // Sort by duration, longest first.
+  RUN_SORT_ORDER_DURATION_DESC = 6;
+}
+
+// ListRunsResponse returns a paginated list of runs.
+message ListRunsResponse {
+  // List of runs.
+  repeated Run runs = 1;
+  // Pagination response.
+  PaginationResponse pagination = 2;
+}
+
+// CancelRunRequest specifies which run to cancel.
+message CancelRunRequest {
+  // ID of the run to cancel.
+  string run_id = 1;
+  // Reason for cancellation.
+  string reason = 2;
+}
+
+// CancelRunResponse confirms the cancellation.
+message CancelRunResponse {
+  // The cancelled run.
+  Run run = 1;
+}
+
+// RetryRunRequest specifies which run to retry.
+message RetryRunRequest {
+  // ID of the run to retry.
+  string run_id = 1;
+  // Only retry failed tests.
+  bool failed_only = 2;
+  // Override environment variables.
+  map<string, string> environment_override = 3;
+}
+
+// RetryRunResponse returns the new run.
+message RetryRunResponse {
+  // The new run created from the retry.
+  Run run = 1;
+  // ID of the original run.
+  string original_run_id = 2;
+}
+
+// StreamRunLogsRequest specifies which run to stream logs for.
+message StreamRunLogsRequest {
+  // ID of the run.
+  string run_id = 1;
+  // Filter by log stream.
+  LogStream stream = 2;
+  // Filter by test ID.
+  string test_id = 3;
+  // Start from this sequence number (for resuming).
+  int64 from_sequence = 4;
+}
+
+// RunLogEntry is a single log entry from a run.
+message RunLogEntry {
+  // Sequence number for ordering.
+  int64 sequence = 1;
+  // Timestamp of the log entry.
+  google.protobuf.Timestamp timestamp = 2;
+  // Log stream source.
+  LogStream stream = 3;
+  // Log content.
+  string message = 4;
+  // Test ID if from a specific test.
+  string test_id = 5;
+}
+
+// GetRunLogsRequest retrieves stored logs for a run.
+message GetRunLogsRequest {
+  // ID of the run.
+  string run_id = 1;
+  // Filter by log stream.
+  LogStream stream = 2;
+  // Filter by test ID.
+  string test_id = 3;
+  // Pagination.
+  Pagination pagination = 4;
+}
+
+// GetRunLogsResponse returns stored logs.
+message GetRunLogsResponse {
+  // Log entries.
+  repeated RunLogEntry entries = 1;
+  // Pagination response.
+  PaginationResponse pagination = 2;
+}
+
+// Run represents a test execution instance.
+message Run {
+  // Unique identifier.
+  string id = 1;
+  // Service this run belongs to.
+  string service_id = 2;
+  // Service name for display.
+  string service_name = 3;
+  // Current status.
+  RunStatus status = 4;
+  // Git reference being tested.
+  GitRef git_ref = 5;
+  // Trigger information.
+  RunTrigger trigger = 6;
+  // Execution type used.
+  ExecutionType execution_type = 7;
+  // Agent executing this run (if running).
+  string agent_id = 8;
+  // When the run was created.
+  google.protobuf.Timestamp created_at = 9;
+  // When the run started executing.
+  google.protobuf.Timestamp started_at = 10;
+  // When the run finished.
+  google.protobuf.Timestamp finished_at = 11;
+  // Test result summary.
+  RunSummary summary = 12;
+  // Error message if status is ERROR.
+  string error_message = 13;
+  // Labels for filtering.
+  map<string, string> labels = 14;
+  // Priority used for scheduling.
+  int32 priority = 15;
+  // Configured timeout.
+  Duration timeout = 16;
+  // ID of the original run if this is a retry.
+  string retry_of_run_id = 17;
+  // Number of retry attempts.
+  int32 retry_count = 18;
+}
+
+// RunTestResult represents the outcome of a single test in a run response.
+// Use this for run-specific test result data.
+message RunTestResult {
+  // Unique identifier.
+  string id = 1;
+  // Run this result belongs to.
+  string run_id = 2;
+  // Test definition ID.
+  string test_id = 3;
+  // Test name as reported by the framework.
+  string test_name = 4;
+  // Full test path (e.g., "package.Class.method").
+  string test_path = 5;
+  // Test outcome.
+  TestStatus status = 6;
+  // Duration of test execution.
+  Duration duration = 7;
+  // Error message if failed.
+  string error_message = 8;
+  // Stack trace if available.
+  string stack_trace = 9;
+  // Retry attempt number.
+  int32 retry_attempt = 10;
+  // Timestamp when test completed.
+  google.protobuf.Timestamp timestamp = 11;
+  // Additional metadata from the test framework.
+  map<string, string> metadata = 12;
+  // System output captured during test.
+  string system_out = 13;
+  // System error captured during test.
+  string system_err = 14;
+}
+
+// RunArtifact is a file produced during test execution for run responses.
+message RunArtifact {
+  // Unique identifier.
+  string id = 1;
+  // Run this artifact belongs to.
+  string run_id = 2;
+  // Test ID if artifact is from a specific test.
+  string test_id = 3;
+  // Human-readable name.
+  string name = 4;
+  // Original file path relative to workspace.
+  string path = 5;
+  // MIME content type.
+  string content_type = 6;
+  // Size in bytes.
+  int64 size = 7;
+  // Download URL (signed, time-limited).
+  string url = 8;
+  // SHA256 checksum.
+  string checksum = 9;
+  // When the artifact was uploaded.
+  google.protobuf.Timestamp created_at = 10;
+  // When the download URL expires.
+  google.protobuf.Timestamp expires_at = 11;
+}

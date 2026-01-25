@@ -1,0 +1,173 @@
+// Copyright 2024 Conductor Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package conductor.v1;
+
+option go_package = "github.com/conductor/conductor/api/gen/conductor/v1;conductorv1";
+
+import "google/protobuf/timestamp.proto";
+
+// AgentStatus represents the current operational state of an agent.
+enum AgentStatus {
+  // Default value, should not be used.
+  AGENT_STATUS_UNSPECIFIED = 0;
+  // Agent is connected and ready to accept work.
+  AGENT_STATUS_IDLE = 1;
+  // Agent is currently executing one or more test runs.
+  AGENT_STATUS_BUSY = 2;
+  // Agent is draining - finishing current work but not accepting new work.
+  AGENT_STATUS_DRAINING = 3;
+  // Agent has disconnected or missed heartbeat threshold.
+  AGENT_STATUS_OFFLINE = 4;
+}
+
+// RunStatus represents the lifecycle state of a test run.
+enum RunStatus {
+  // Default value, should not be used.
+  RUN_STATUS_UNSPECIFIED = 0;
+  // Run is queued and waiting for an available agent.
+  RUN_STATUS_PENDING = 1;
+  // Run is currently being executed by an agent.
+  RUN_STATUS_RUNNING = 2;
+  // Run completed successfully with all tests passing.
+  RUN_STATUS_PASSED = 3;
+  // Run completed with one or more test failures.
+  RUN_STATUS_FAILED = 4;
+  // Run encountered an infrastructure or execution error.
+  RUN_STATUS_ERROR = 5;
+  // Run exceeded its configured timeout duration.
+  RUN_STATUS_TIMEOUT = 6;
+  // Run was cancelled by user or system.
+  RUN_STATUS_CANCELLED = 7;
+}
+
+// TestStatus represents the outcome of an individual test case.
+enum TestStatus {
+  // Default value, should not be used.
+  TEST_STATUS_UNSPECIFIED = 0;
+  // Test passed successfully.
+  TEST_STATUS_PASS = 1;
+  // Test failed with assertion errors.
+  TEST_STATUS_FAIL = 2;
+  // Test was skipped or marked as pending.
+  TEST_STATUS_SKIP = 3;
+  // Test encountered an error during execution.
+  TEST_STATUS_ERROR = 4;
+}
+
+// ExecutionType specifies how tests should be executed on an agent.
+enum ExecutionType {
+  // Default value, should not be used.
+  EXECUTION_TYPE_UNSPECIFIED = 0;
+  // Execute tests as a subprocess on the agent host.
+  // Fast startup, shares agent environment.
+  EXECUTION_TYPE_SUBPROCESS = 1;
+  // Execute tests inside a container for isolation.
+  // Slower startup but provides consistent, isolated environment.
+  EXECUTION_TYPE_CONTAINER = 2;
+}
+
+// ResultFormat indicates the format of test results produced by a test suite.
+enum ResultFormat {
+  // Default value, should not be used.
+  RESULT_FORMAT_UNSPECIFIED = 0;
+  // JUnit XML format (Java, most CI systems).
+  RESULT_FORMAT_JUNIT = 1;
+  // Jest JSON format (JavaScript/TypeScript).
+  RESULT_FORMAT_JEST = 2;
+  // Playwright JSON format (browser testing).
+  RESULT_FORMAT_PLAYWRIGHT = 3;
+  // Go test JSON format (go test -json).
+  RESULT_FORMAT_GO_TEST = 4;
+  // TAP (Test Anything Protocol) format.
+  RESULT_FORMAT_TAP = 5;
+  // Generic JSON format following Conductor schema.
+  RESULT_FORMAT_JSON = 6;
+}
+
+// LogStream identifies the source of log output.
+enum LogStream {
+  // Default value, should not be used.
+  LOG_STREAM_UNSPECIFIED = 0;
+  // Standard output stream.
+  LOG_STREAM_STDOUT = 1;
+  // Standard error stream.
+  LOG_STREAM_STDERR = 2;
+}
+
+// Pagination provides cursor-based pagination parameters.
+message Pagination {
+  // Maximum number of items to return. Default is 50, max is 100.
+  int32 page_size = 1;
+  // Opaque cursor for fetching the next page.
+  // Empty for the first page.
+  string page_token = 2;
+}
+
+// PaginationResponse contains pagination metadata for list responses.
+message PaginationResponse {
+  // Cursor for fetching the next page. Empty if no more results.
+  string next_page_token = 1;
+  // Total count of items matching the query (optional, may be expensive).
+  int64 total_count = 2;
+  // Whether there are more results available.
+  bool has_more = 3;
+}
+
+// TimeRange represents a time interval for filtering queries.
+message TimeRange {
+  // Start of the time range (inclusive).
+  google.protobuf.Timestamp start = 1;
+  // End of the time range (exclusive).
+  google.protobuf.Timestamp end = 2;
+}
+
+// ResourceUsage captures system resource utilization metrics.
+message ResourceUsage {
+  // CPU usage as a percentage (0-100).
+  double cpu_percent = 1;
+  // Memory usage in bytes.
+  int64 memory_bytes = 2;
+  // Total memory available in bytes.
+  int64 memory_total_bytes = 3;
+  // Disk usage in bytes.
+  int64 disk_bytes = 4;
+  // Total disk space available in bytes.
+  int64 disk_total_bytes = 5;
+}
+
+// GitRef specifies a git reference for code checkout.
+message GitRef {
+  // Git repository URL (HTTPS or SSH).
+  string repository_url = 1;
+  // Branch name (e.g., "main", "feature/foo").
+  string branch = 2;
+  // Full commit SHA (40 characters).
+  string commit_sha = 3;
+  // Short commit SHA for display (7-8 characters).
+  string commit_sha_short = 4;
+  // Pull request number if this is a PR build.
+  int64 pull_request_number = 5;
+  // Tag name if this is a tag build.
+  string tag = 6;
+}
+
+// Contact information for service owners.
+message Contact {
+  // Display name of the contact.
+  string name = 1;
+  // Email address.
+  string email = 2;
+  // Slack channel or user handle.
+  string slack = 3;
+}
+
+// Duration represents a time duration with nanosecond precision.
+message Duration {
+  // Signed seconds of the span of time.
+  int64 seconds = 1;
+  // Signed fractions of a second at nanosecond resolution.
+  int32 nanos = 2;
+}

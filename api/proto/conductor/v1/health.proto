@@ -1,0 +1,135 @@
+// Copyright 2024 Conductor Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package conductor.v1;
+
+option go_package = "github.com/conductor/conductor/api/gen/conductor/v1;conductorv1";
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+// HealthService provides health check endpoints for the control plane.
+// Used by load balancers, orchestrators, and monitoring systems.
+service HealthService {
+  // Check performs a health check on the control plane and its dependencies.
+  rpc Check(HealthCheckRequest) returns (HealthCheckResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/health"
+    };
+  }
+
+  // CheckLiveness returns whether the service is alive (minimal check).
+  // Used for Kubernetes liveness probes.
+  rpc CheckLiveness(LivenessRequest) returns (LivenessResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/health/live"
+    };
+  }
+
+  // CheckReadiness returns whether the service is ready to accept traffic.
+  // Used for Kubernetes readiness probes.
+  rpc CheckReadiness(ReadinessRequest) returns (ReadinessResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/health/ready"
+    };
+  }
+}
+
+// HealthCheckRequest specifies options for the health check.
+message HealthCheckRequest {
+  // Whether to include detailed component status.
+  bool include_components = 1;
+  // Specific components to check (empty means all).
+  repeated string components = 2;
+}
+
+// HealthCheckResponse contains the overall health status and component details.
+message HealthCheckResponse {
+  // Overall health status of the system.
+  HealthStatus status = 1;
+  // Human-readable description of the health status.
+  string message = 2;
+  // Health status of individual components.
+  repeated ComponentHealth components = 3;
+  // Version information for the control plane.
+  VersionInfo version = 4;
+  // Timestamp of the health check.
+  google.protobuf.Timestamp timestamp = 5;
+  // Uptime of the service in seconds.
+  int64 uptime_seconds = 6;
+}
+
+// HealthStatus represents the overall health state.
+enum HealthStatus {
+  // Default value, should not be used.
+  HEALTH_STATUS_UNSPECIFIED = 0;
+  // System is healthy and fully operational.
+  HEALTH_STATUS_HEALTHY = 1;
+  // System is operational but some components are degraded.
+  HEALTH_STATUS_DEGRADED = 2;
+  // System is not operational.
+  HEALTH_STATUS_UNHEALTHY = 3;
+}
+
+// ComponentHealth represents the health of an individual component.
+message ComponentHealth {
+  // Name of the component (e.g., "database", "redis", "artifact_storage").
+  string name = 1;
+  // Health status of the component.
+  HealthStatus status = 2;
+  // Human-readable message about the component's health.
+  string message = 3;
+  // Response time of the health check in milliseconds.
+  int64 latency_ms = 4;
+  // When this component was last checked.
+  google.protobuf.Timestamp last_checked = 5;
+  // Additional details about the component.
+  map<string, string> details = 6;
+  // Whether this component is critical for system operation.
+  bool critical = 7;
+}
+
+// VersionInfo contains version and build information.
+message VersionInfo {
+  // Semantic version of the control plane.
+  string version = 1;
+  // Git commit SHA.
+  string commit = 2;
+  // Build timestamp.
+  google.protobuf.Timestamp build_time = 3;
+  // Go version used to build.
+  string go_version = 4;
+  // Target OS/architecture.
+  string platform = 5;
+}
+
+// LivenessRequest is empty - just checks if the service is responding.
+message LivenessRequest {}
+
+// LivenessResponse indicates the service is alive.
+message LivenessResponse {
+  // Always true if the service is responding.
+  bool alive = 1;
+  // Timestamp of the check.
+  google.protobuf.Timestamp timestamp = 2;
+}
+
+// ReadinessRequest specifies options for the readiness check.
+message ReadinessRequest {
+  // Whether to check all dependencies or just critical ones.
+  bool check_all = 1;
+}
+
+// ReadinessResponse indicates whether the service is ready for traffic.
+message ReadinessResponse {
+  // Whether the service is ready to accept traffic.
+  bool ready = 1;
+  // Reason if not ready.
+  string reason = 2;
+  // Components that are not ready.
+  repeated string not_ready_components = 3;
+  // Timestamp of the check.
+  google.protobuf.Timestamp timestamp = 4;
+}

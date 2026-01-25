@@ -1,0 +1,513 @@
+// Copyright 2024 Conductor Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package conductor.v1;
+
+option go_package = "github.com/conductor/conductor/api/gen/conductor/v1;conductorv1";
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "conductor/v1/common.proto";
+
+// NotificationService manages notification channels and rules for alerting
+// users about test run outcomes and system events.
+service NotificationService {
+  // CreateChannel creates a new notification channel.
+  rpc CreateChannel(CreateChannelRequest) returns (CreateChannelResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/notifications/channels"
+      body: "*"
+    };
+  }
+
+  // GetChannel retrieves a notification channel by ID.
+  rpc GetChannel(GetChannelRequest) returns (GetChannelResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/notifications/channels/{channel_id}"
+    };
+  }
+
+  // ListChannels returns all notification channels.
+  rpc ListChannels(ListChannelsRequest) returns (ListChannelsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/notifications/channels"
+    };
+  }
+
+  // UpdateChannel updates a notification channel.
+  rpc UpdateChannel(UpdateChannelRequest) returns (UpdateChannelResponse) {
+    option (google.api.http) = {
+      patch: "/api/v1/notifications/channels/{channel_id}"
+      body: "*"
+    };
+  }
+
+  // DeleteChannel removes a notification channel.
+  rpc DeleteChannel(DeleteChannelRequest) returns (DeleteChannelResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/notifications/channels/{channel_id}"
+    };
+  }
+
+  // TestChannel sends a test notification to verify channel configuration.
+  rpc TestChannel(TestChannelRequest) returns (TestChannelResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/notifications/channels/{channel_id}/test"
+      body: "*"
+    };
+  }
+
+  // CreateRule creates a new notification rule.
+  rpc CreateRule(CreateRuleRequest) returns (CreateRuleResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/notifications/rules"
+      body: "*"
+    };
+  }
+
+  // GetRule retrieves a notification rule by ID.
+  rpc GetRule(GetRuleRequest) returns (GetRuleResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/notifications/rules/{rule_id}"
+    };
+  }
+
+  // ListRules returns all notification rules.
+  rpc ListRules(ListRulesRequest) returns (ListRulesResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/notifications/rules"
+    };
+  }
+
+  // UpdateRule updates a notification rule.
+  rpc UpdateRule(UpdateRuleRequest) returns (UpdateRuleResponse) {
+    option (google.api.http) = {
+      patch: "/api/v1/notifications/rules/{rule_id}"
+      body: "*"
+    };
+  }
+
+  // DeleteRule removes a notification rule.
+  rpc DeleteRule(DeleteRuleRequest) returns (DeleteRuleResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/notifications/rules/{rule_id}"
+    };
+  }
+
+  // ListNotificationHistory returns recent notifications sent.
+  rpc ListNotificationHistory(ListNotificationHistoryRequest) returns (ListNotificationHistoryResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/notifications/history"
+    };
+  }
+}
+
+// NotificationChannel represents a destination for notifications.
+message NotificationChannel {
+  // Unique identifier for the channel.
+  string id = 1;
+  // Human-readable name for the channel.
+  string name = 2;
+  // Type of notification channel.
+  ChannelType type = 3;
+  // Whether the channel is enabled.
+  bool enabled = 4;
+  // Channel-specific configuration.
+  ChannelConfig config = 5;
+  // When the channel was created.
+  google.protobuf.Timestamp created_at = 6;
+  // When the channel was last updated.
+  google.protobuf.Timestamp updated_at = 7;
+  // When a notification was last sent via this channel.
+  google.protobuf.Timestamp last_used_at = 8;
+  // Number of notifications sent via this channel.
+  int64 notification_count = 9;
+}
+
+// ChannelType specifies the type of notification channel.
+enum ChannelType {
+  // Default value, should not be used.
+  CHANNEL_TYPE_UNSPECIFIED = 0;
+  // Slack webhook or app integration.
+  CHANNEL_TYPE_SLACK = 1;
+  // Email notification.
+  CHANNEL_TYPE_EMAIL = 2;
+  // Generic webhook (POST to URL).
+  CHANNEL_TYPE_WEBHOOK = 3;
+  // PagerDuty integration.
+  CHANNEL_TYPE_PAGERDUTY = 4;
+  // Microsoft Teams webhook.
+  CHANNEL_TYPE_TEAMS = 5;
+  // Discord webhook.
+  CHANNEL_TYPE_DISCORD = 6;
+}
+
+// ChannelConfig contains channel-specific configuration.
+message ChannelConfig {
+  // Slack configuration.
+  SlackConfig slack = 1;
+  // Email configuration.
+  EmailConfig email = 2;
+  // Webhook configuration.
+  WebhookConfig webhook = 3;
+  // PagerDuty configuration.
+  PagerDutyConfig pagerduty = 4;
+  // Microsoft Teams configuration.
+  TeamsConfig teams = 5;
+  // Discord configuration.
+  DiscordConfig discord = 6;
+}
+
+// SlackConfig contains Slack-specific settings.
+message SlackConfig {
+  // Slack webhook URL.
+  string webhook_url = 1;
+  // Channel to post to (can override webhook default).
+  string channel = 2;
+  // Username to display.
+  string username = 3;
+  // Icon emoji or URL.
+  string icon = 4;
+  // Bot token for Slack Web API.
+  string token = 5;
+}
+
+// EmailConfig contains email-specific settings.
+message EmailConfig {
+  // Recipient email addresses.
+  repeated string to = 1;
+  // CC email addresses.
+  repeated string cc = 2;
+  // Subject line template.
+  string subject_template = 3;
+  // Whether to send HTML emails.
+  bool html = 4;
+}
+
+// WebhookConfig contains generic webhook settings.
+message WebhookConfig {
+  // Webhook URL to POST to.
+  string url = 1;
+  // HTTP headers to include.
+  map<string, string> headers = 2;
+  // Secret for HMAC signature.
+  string secret = 3;
+  // Request timeout in seconds.
+  int32 timeout_seconds = 4;
+}
+
+// PagerDutyConfig contains PagerDuty-specific settings.
+message PagerDutyConfig {
+  // PagerDuty routing key (integration key).
+  string routing_key = 1;
+  // Severity for alerts.
+  string severity = 2;
+}
+
+// TeamsConfig contains Microsoft Teams-specific settings.
+message TeamsConfig {
+  // Teams webhook URL.
+  string webhook_url = 1;
+}
+
+// DiscordConfig contains Discord-specific settings.
+message DiscordConfig {
+  // Discord webhook URL.
+  string webhook_url = 1;
+  // Username to display.
+  string username = 2;
+  // Avatar URL.
+  string avatar_url = 3;
+}
+
+// NotificationRule defines when and how to send notifications.
+message NotificationRule {
+  // Unique identifier for the rule.
+  string id = 1;
+  // Human-readable name for the rule.
+  string name = 2;
+  // Whether the rule is enabled.
+  bool enabled = 3;
+  // Channels to send notifications to.
+  repeated string channel_ids = 4;
+  // Events that trigger this rule.
+  repeated NotificationEvent events = 5;
+  // Filters to apply to events.
+  NotificationFilter filter = 6;
+  // When the rule was created.
+  google.protobuf.Timestamp created_at = 7;
+  // When the rule was last updated.
+  google.protobuf.Timestamp updated_at = 8;
+  // When this rule last triggered a notification.
+  google.protobuf.Timestamp last_triggered_at = 9;
+}
+
+// NotificationEvent specifies events that can trigger notifications.
+enum NotificationEvent {
+  // Default value, should not be used.
+  NOTIFICATION_EVENT_UNSPECIFIED = 0;
+  // Test run completed (any status).
+  NOTIFICATION_EVENT_RUN_COMPLETED = 1;
+  // Test run failed.
+  NOTIFICATION_EVENT_RUN_FAILED = 2;
+  // Test run passed.
+  NOTIFICATION_EVENT_RUN_PASSED = 3;
+  // Test run timed out.
+  NOTIFICATION_EVENT_RUN_TIMEOUT = 4;
+  // Test run encountered an error.
+  NOTIFICATION_EVENT_RUN_ERROR = 5;
+  // Agent went offline.
+  NOTIFICATION_EVENT_AGENT_OFFLINE = 6;
+  // Agent came back online.
+  NOTIFICATION_EVENT_AGENT_ONLINE = 7;
+  // Flaky test detected.
+  NOTIFICATION_EVENT_FLAKY_TEST = 8;
+  // Service sync completed.
+  NOTIFICATION_EVENT_SERVICE_SYNCED = 9;
+}
+
+// NotificationFilter specifies conditions for triggering notifications.
+message NotificationFilter {
+  // Filter by service IDs (empty means all).
+  repeated string service_ids = 1;
+  // Filter by branches (supports wildcards).
+  repeated string branches = 2;
+  // Filter by labels.
+  map<string, string> labels = 3;
+  // Minimum consecutive failures before notifying.
+  int32 min_consecutive_failures = 4;
+  // Only notify on first failure after success.
+  bool first_failure_only = 5;
+  // Only notify during specific hours (HH:MM-HH:MM in UTC).
+  string notification_window = 6;
+}
+
+// CreateChannelRequest creates a new notification channel.
+message CreateChannelRequest {
+  // Human-readable name for the channel.
+  string name = 1;
+  // Type of notification channel.
+  ChannelType type = 2;
+  // Channel-specific configuration.
+  ChannelConfig config = 3;
+  // Whether the channel is enabled.
+  bool enabled = 4;
+}
+
+// CreateChannelResponse returns the created channel.
+message CreateChannelResponse {
+  // The created channel.
+  NotificationChannel channel = 1;
+}
+
+// GetChannelRequest specifies which channel to retrieve.
+message GetChannelRequest {
+  // ID of the channel.
+  string channel_id = 1;
+}
+
+// GetChannelResponse returns the requested channel.
+message GetChannelResponse {
+  // The requested channel.
+  NotificationChannel channel = 1;
+}
+
+// ListChannelsRequest specifies filtering for channels.
+message ListChannelsRequest {
+  // Filter by channel type.
+  ChannelType type = 1;
+  // Filter by enabled status.
+  optional bool enabled = 2;
+  // Pagination.
+  Pagination pagination = 3;
+}
+
+// ListChannelsResponse returns notification channels.
+message ListChannelsResponse {
+  // List of channels.
+  repeated NotificationChannel channels = 1;
+  // Pagination response.
+  PaginationResponse pagination = 2;
+}
+
+// UpdateChannelRequest updates a notification channel.
+message UpdateChannelRequest {
+  // ID of the channel to update.
+  string channel_id = 1;
+  // New name (optional).
+  optional string name = 2;
+  // New configuration (optional).
+  ChannelConfig config = 3;
+  // New enabled status (optional).
+  optional bool enabled = 4;
+}
+
+// UpdateChannelResponse returns the updated channel.
+message UpdateChannelResponse {
+  // The updated channel.
+  NotificationChannel channel = 1;
+}
+
+// DeleteChannelRequest specifies which channel to delete.
+message DeleteChannelRequest {
+  // ID of the channel to delete.
+  string channel_id = 1;
+}
+
+// DeleteChannelResponse confirms the deletion.
+message DeleteChannelResponse {
+  // Whether deletion was successful.
+  bool success = 1;
+}
+
+// TestChannelRequest sends a test notification.
+message TestChannelRequest {
+  // ID of the channel to test.
+  string channel_id = 1;
+  // Optional custom message for the test.
+  string message = 2;
+}
+
+// TestChannelResponse returns the result of the test.
+message TestChannelResponse {
+  // Whether the test notification was sent successfully.
+  bool success = 1;
+  // Error message if the test failed.
+  string error_message = 2;
+  // Response time in milliseconds.
+  int64 latency_ms = 3;
+}
+
+// CreateRuleRequest creates a new notification rule.
+message CreateRuleRequest {
+  // Human-readable name for the rule.
+  string name = 1;
+  // Channels to send notifications to.
+  repeated string channel_ids = 2;
+  // Events that trigger this rule.
+  repeated NotificationEvent events = 3;
+  // Filters to apply to events.
+  NotificationFilter filter = 4;
+  // Whether the rule is enabled.
+  bool enabled = 5;
+}
+
+// CreateRuleResponse returns the created rule.
+message CreateRuleResponse {
+  // The created rule.
+  NotificationRule rule = 1;
+}
+
+// GetRuleRequest specifies which rule to retrieve.
+message GetRuleRequest {
+  // ID of the rule.
+  string rule_id = 1;
+}
+
+// GetRuleResponse returns the requested rule.
+message GetRuleResponse {
+  // The requested rule.
+  NotificationRule rule = 1;
+}
+
+// ListRulesRequest specifies filtering for rules.
+message ListRulesRequest {
+  // Filter by enabled status.
+  optional bool enabled = 1;
+  // Filter by event type.
+  NotificationEvent event = 2;
+  // Filter by service ID.
+  string service_id = 3;
+  // Pagination.
+  Pagination pagination = 4;
+}
+
+// ListRulesResponse returns notification rules.
+message ListRulesResponse {
+  // List of rules.
+  repeated NotificationRule rules = 1;
+  // Pagination response.
+  PaginationResponse pagination = 2;
+}
+
+// UpdateRuleRequest updates a notification rule.
+message UpdateRuleRequest {
+  // ID of the rule to update.
+  string rule_id = 1;
+  // New name (optional).
+  optional string name = 2;
+  // New channel IDs (optional, replaces existing).
+  repeated string channel_ids = 3;
+  // New events (optional, replaces existing).
+  repeated NotificationEvent events = 4;
+  // New filter (optional).
+  NotificationFilter filter = 5;
+  // New enabled status (optional).
+  optional bool enabled = 6;
+}
+
+// UpdateRuleResponse returns the updated rule.
+message UpdateRuleResponse {
+  // The updated rule.
+  NotificationRule rule = 1;
+}
+
+// DeleteRuleRequest specifies which rule to delete.
+message DeleteRuleRequest {
+  // ID of the rule to delete.
+  string rule_id = 1;
+}
+
+// DeleteRuleResponse confirms the deletion.
+message DeleteRuleResponse {
+  // Whether deletion was successful.
+  bool success = 1;
+}
+
+// ListNotificationHistoryRequest specifies filtering for notification history.
+message ListNotificationHistoryRequest {
+  // Filter by channel ID.
+  string channel_id = 1;
+  // Filter by rule ID.
+  string rule_id = 2;
+  // Filter by success status.
+  optional bool success = 3;
+  // Filter by time range.
+  TimeRange time_range = 4;
+  // Pagination.
+  Pagination pagination = 5;
+}
+
+// ListNotificationHistoryResponse returns notification history.
+message ListNotificationHistoryResponse {
+  // List of notification records.
+  repeated NotificationRecord records = 1;
+  // Pagination response.
+  PaginationResponse pagination = 2;
+}
+
+// NotificationRecord represents a notification that was sent.
+message NotificationRecord {
+  // Unique identifier.
+  string id = 1;
+  // Channel the notification was sent to.
+  string channel_id = 2;
+  // Rule that triggered the notification.
+  string rule_id = 3;
+  // Event that triggered the notification.
+  NotificationEvent event = 4;
+  // Related run ID if applicable.
+  string run_id = 5;
+  // Related service ID.
+  string service_id = 6;
+  // Whether the notification was sent successfully.
+  bool success = 7;
+  // Error message if failed.
+  string error_message = 8;
+  // When the notification was sent.
+  google.protobuf.Timestamp sent_at = 9;
+  // Response time in milliseconds.
+  int64 latency_ms = 10;
+}

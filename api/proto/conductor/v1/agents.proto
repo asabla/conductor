@@ -1,0 +1,261 @@
+// Copyright 2024 Conductor Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package conductor.v1;
+
+option go_package = "github.com/conductor/conductor/api/gen/conductor/v1;conductorv1";
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "conductor/v1/common.proto";
+
+// AgentManagementService provides administrative operations for managing agents.
+// This is the REST API for agent management, separate from the bidirectional
+// streaming AgentService used for agent-to-control-plane communication.
+service AgentManagementService {
+  // ListAgents returns a paginated list of all registered agents.
+  rpc ListAgents(ListAgentsRequest) returns (ListAgentsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/agents"
+    };
+  }
+
+  // GetAgent retrieves details of a specific agent.
+  rpc GetAgent(GetAgentRequest) returns (GetAgentResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/agents/{agent_id}"
+    };
+  }
+
+  // DrainAgent puts an agent into draining mode, preventing new work assignments.
+  // The agent will complete in-progress runs but will not accept new ones.
+  rpc DrainAgent(DrainAgentRequest) returns (DrainAgentResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/agents/{agent_id}/drain"
+      body: "*"
+    };
+  }
+
+  // UndrainAgent removes an agent from draining mode, allowing it to accept work again.
+  rpc UndrainAgent(UndrainAgentRequest) returns (UndrainAgentResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/agents/{agent_id}/undrain"
+      body: "*"
+    };
+  }
+
+  // DeleteAgent removes an agent from the registry.
+  // Only offline agents can be deleted.
+  rpc DeleteAgent(DeleteAgentRequest) returns (DeleteAgentResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/agents/{agent_id}"
+    };
+  }
+
+  // GetAgentStats retrieves statistics for a specific agent.
+  rpc GetAgentStats(GetAgentStatsRequest) returns (GetAgentStatsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/agents/{agent_id}/stats"
+    };
+  }
+}
+
+// ListAgentsRequest specifies filtering and pagination for listing agents.
+message ListAgentsRequest {
+  // Filter by agent status.
+  repeated AgentStatus statuses = 1;
+  // Filter by network zone.
+  string network_zone = 2;
+  // Filter by labels.
+  map<string, string> labels = 3;
+  // Search query (searches name, ID).
+  string query = 4;
+  // Pagination parameters.
+  Pagination pagination = 5;
+  // Sort order for results.
+  AgentSortOrder sort_order = 6;
+}
+
+// AgentSortOrder specifies how to sort agent results.
+enum AgentSortOrder {
+  // Default: by name alphabetically.
+  AGENT_SORT_ORDER_UNSPECIFIED = 0;
+  // Sort by name alphabetically.
+  AGENT_SORT_ORDER_NAME_ASC = 1;
+  // Sort by name reverse alphabetically.
+  AGENT_SORT_ORDER_NAME_DESC = 2;
+  // Sort by last heartbeat, most recent first.
+  AGENT_SORT_ORDER_HEARTBEAT_DESC = 3;
+  // Sort by status.
+  AGENT_SORT_ORDER_STATUS = 4;
+}
+
+// ListAgentsResponse returns a paginated list of agents.
+message ListAgentsResponse {
+  // List of agents.
+  repeated Agent agents = 1;
+  // Pagination response.
+  PaginationResponse pagination = 2;
+}
+
+// GetAgentRequest specifies which agent to retrieve.
+message GetAgentRequest {
+  // ID of the agent.
+  string agent_id = 1;
+  // Whether to include current run details.
+  bool include_current_runs = 2;
+}
+
+// GetAgentResponse returns the requested agent.
+message GetAgentResponse {
+  // The requested agent.
+  Agent agent = 1;
+  // Current runs if requested.
+  repeated AgentRun current_runs = 2;
+}
+
+// AgentRun represents a run currently being executed by an agent.
+message AgentRun {
+  // Run ID.
+  string run_id = 1;
+  // Service name.
+  string service_name = 2;
+  // When the run started.
+  google.protobuf.Timestamp started_at = 3;
+  // Current progress percentage (0-100).
+  int32 progress_percent = 4;
+}
+
+// DrainAgentRequest specifies the agent to drain.
+message DrainAgentRequest {
+  // ID of the agent to drain.
+  string agent_id = 1;
+  // Reason for draining (for audit/logging).
+  string reason = 2;
+  // Whether to cancel currently running work.
+  bool cancel_active = 3;
+  // Optional deadline by which agent should be fully drained.
+  google.protobuf.Timestamp deadline = 4;
+}
+
+// DrainAgentResponse confirms the drain operation.
+message DrainAgentResponse {
+  // The updated agent.
+  Agent agent = 1;
+  // Number of runs that were cancelled (if cancel_active was true).
+  int32 cancelled_runs = 2;
+}
+
+// UndrainAgentRequest specifies the agent to undrain.
+message UndrainAgentRequest {
+  // ID of the agent to undrain.
+  string agent_id = 1;
+}
+
+// UndrainAgentResponse confirms the undrain operation.
+message UndrainAgentResponse {
+  // The updated agent.
+  Agent agent = 1;
+}
+
+// DeleteAgentRequest specifies the agent to delete.
+message DeleteAgentRequest {
+  // ID of the agent to delete.
+  string agent_id = 1;
+  // Force deletion even if agent has historical data.
+  bool force = 2;
+}
+
+// DeleteAgentResponse confirms the deletion.
+message DeleteAgentResponse {
+  // Whether deletion was successful.
+  bool success = 1;
+  // Message providing additional context.
+  string message = 2;
+}
+
+// GetAgentStatsRequest specifies the agent to get stats for.
+message GetAgentStatsRequest {
+  // ID of the agent.
+  string agent_id = 1;
+  // Time range for statistics.
+  TimeRange time_range = 2;
+}
+
+// GetAgentStatsResponse returns agent statistics.
+message GetAgentStatsResponse {
+  // ID of the agent.
+  string agent_id = 1;
+  // Total runs executed in the time range.
+  int32 total_runs = 2;
+  // Successful runs.
+  int32 successful_runs = 3;
+  // Failed runs.
+  int32 failed_runs = 4;
+  // Average run duration in milliseconds.
+  int64 avg_duration_ms = 5;
+  // Total time spent executing tests in milliseconds.
+  int64 total_execution_time_ms = 6;
+  // Uptime percentage in the time range.
+  double uptime_percent = 7;
+  // Average resource utilization.
+  ResourceUsage avg_resource_usage = 8;
+}
+
+// Agent represents a registered agent in the system.
+message Agent {
+  // Unique identifier for the agent.
+  string id = 1;
+  // Human-readable name for the agent.
+  string name = 2;
+  // Current operational status.
+  AgentStatus status = 3;
+  // Semantic version of the agent software.
+  string version = 4;
+  // Network zones this agent can access.
+  repeated string network_zones = 5;
+  // Agent capabilities and constraints.
+  AgentCapabilities capabilities = 6;
+  // Timestamp of the last received heartbeat.
+  google.protobuf.Timestamp last_heartbeat = 7;
+  // IDs of runs currently being executed.
+  repeated string current_runs = 8;
+  // When the agent first registered.
+  google.protobuf.Timestamp registered_at = 9;
+  // Labels for filtering and organization.
+  map<string, string> labels = 10;
+  // Operating system (e.g., "linux", "darwin", "windows").
+  string os = 11;
+  // CPU architecture (e.g., "amd64", "arm64").
+  string arch = 12;
+  // Hostname of the machine running the agent.
+  string hostname = 13;
+  // IP address of the agent.
+  string ip_address = 14;
+  // Current resource utilization.
+  ResourceUsage resource_usage = 15;
+  // Maximum number of parallel runs the agent can handle.
+  int32 max_parallel = 16;
+  // Number of currently active runs.
+  int32 active_run_count = 17;
+}
+
+// AgentCapabilities describes what an agent can do.
+message AgentCapabilities {
+  // Available runtime environments (e.g., "node18", "python3.11", "go1.21").
+  repeated string runtimes = 1;
+  // Whether Docker is available for container execution.
+  bool docker_available = 2;
+  // Total CPU cores available.
+  int32 cpu_cores = 3;
+  // Total memory available in bytes.
+  int64 memory_bytes = 4;
+  // Total disk space available in bytes.
+  int64 disk_bytes = 5;
+  // Supported execution types.
+  repeated ExecutionType supported_execution_types = 6;
+  // Custom capabilities as key-value pairs.
+  map<string, string> custom = 7;
+}

@@ -1,0 +1,229 @@
+// Copyright 2024 Conductor Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package conductor.v1;
+
+option go_package = "github.com/conductor/conductor/api/gen/conductor/v1;conductorv1";
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+// WebhookService handles incoming webhooks from Git providers.
+// These endpoints receive push, pull request, and other events
+// to trigger test runs automatically.
+service WebhookService {
+  // HandleGitHubWebhook processes incoming GitHub webhook events.
+  // Supports push, pull_request, and other relevant event types.
+  rpc HandleGitHubWebhook(GitHubWebhookRequest) returns (WebhookResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/webhooks/github"
+      body: "*"
+    };
+  }
+
+  // HandleGitLabWebhook processes incoming GitLab webhook events.
+  // Supports push, merge_request, and other relevant event types.
+  rpc HandleGitLabWebhook(GitLabWebhookRequest) returns (WebhookResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/webhooks/gitlab"
+      body: "*"
+    };
+  }
+
+  // HandleBitbucketWebhook processes incoming Bitbucket webhook events.
+  // Supports push, pullrequest, and other relevant event types.
+  rpc HandleBitbucketWebhook(BitbucketWebhookRequest) returns (WebhookResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/webhooks/bitbucket"
+      body: "*"
+    };
+  }
+
+  // HandleGenericWebhook processes webhooks from other Git providers.
+  rpc HandleGenericWebhook(GenericWebhookRequest) returns (WebhookResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/webhooks/{provider}"
+      body: "*"
+    };
+  }
+
+  // ListWebhookDeliveries returns recent webhook deliveries for debugging.
+  rpc ListWebhookDeliveries(ListWebhookDeliveriesRequest) returns (ListWebhookDeliveriesResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/webhooks/deliveries"
+    };
+  }
+
+  // GetWebhookDelivery retrieves details of a specific webhook delivery.
+  rpc GetWebhookDelivery(GetWebhookDeliveryRequest) returns (GetWebhookDeliveryResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/webhooks/deliveries/{delivery_id}"
+    };
+  }
+
+  // RetryWebhookDelivery retries processing of a failed webhook delivery.
+  rpc RetryWebhookDelivery(RetryWebhookDeliveryRequest) returns (WebhookResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/webhooks/deliveries/{delivery_id}/retry"
+      body: "*"
+    };
+  }
+}
+
+// GitHubWebhookRequest contains the raw GitHub webhook payload.
+message GitHubWebhookRequest {
+  // Raw JSON payload from GitHub.
+  bytes payload = 1;
+  // GitHub event type header (X-GitHub-Event).
+  string event_type = 2;
+  // GitHub delivery ID header (X-GitHub-Delivery).
+  string delivery_id = 3;
+  // GitHub signature header (X-Hub-Signature-256) for verification.
+  string signature = 4;
+}
+
+// GitLabWebhookRequest contains the raw GitLab webhook payload.
+message GitLabWebhookRequest {
+  // Raw JSON payload from GitLab.
+  bytes payload = 1;
+  // GitLab event type header (X-Gitlab-Event).
+  string event_type = 2;
+  // GitLab token header (X-Gitlab-Token) for verification.
+  string token = 3;
+}
+
+// BitbucketWebhookRequest contains the raw Bitbucket webhook payload.
+message BitbucketWebhookRequest {
+  // Raw JSON payload from Bitbucket.
+  bytes payload = 1;
+  // Bitbucket event type header (X-Event-Key).
+  string event_type = 2;
+  // Bitbucket request UUID header (X-Request-UUID).
+  string request_uuid = 3;
+  // Bitbucket hook UUID header (X-Hook-UUID).
+  string hook_uuid = 4;
+}
+
+// GenericWebhookRequest handles webhooks from other providers.
+message GenericWebhookRequest {
+  // Provider name from the URL path.
+  string provider = 1;
+  // Raw JSON payload.
+  bytes payload = 2;
+  // Event type if available in headers.
+  string event_type = 3;
+  // All headers from the request for provider-specific handling.
+  map<string, string> headers = 4;
+}
+
+// WebhookResponse is returned after processing a webhook.
+message WebhookResponse {
+  // Whether the webhook was processed successfully.
+  bool success = 1;
+  // Unique ID for this webhook delivery (for tracking/debugging).
+  string delivery_id = 2;
+  // Message providing additional context.
+  string message = 3;
+  // IDs of any test runs triggered by this webhook.
+  repeated string triggered_run_ids = 4;
+  // Errors encountered during processing (if any).
+  repeated string errors = 5;
+  // Processing status.
+  WebhookStatus status = 6;
+}
+
+// WebhookStatus indicates the processing outcome of a webhook.
+enum WebhookStatus {
+  // Default value, should not be used.
+  WEBHOOK_STATUS_UNSPECIFIED = 0;
+  // Webhook was processed and triggered runs.
+  WEBHOOK_STATUS_PROCESSED = 1;
+  // Webhook was received but ignored (e.g., event type not configured).
+  WEBHOOK_STATUS_IGNORED = 2;
+  // Webhook processing failed.
+  WEBHOOK_STATUS_FAILED = 3;
+  // Webhook signature verification failed.
+  WEBHOOK_STATUS_INVALID_SIGNATURE = 4;
+  // No matching service found for the repository.
+  WEBHOOK_STATUS_NO_MATCH = 5;
+  // Webhook is queued for processing.
+  WEBHOOK_STATUS_QUEUED = 6;
+}
+
+// ListWebhookDeliveriesRequest specifies filtering for webhook deliveries.
+message ListWebhookDeliveriesRequest {
+  // Filter by Git provider.
+  string provider = 1;
+  // Filter by repository URL.
+  string repository_url = 2;
+  // Filter by processing status.
+  repeated WebhookStatus statuses = 3;
+  // Filter by time range.
+  google.protobuf.Timestamp start_time = 4;
+  google.protobuf.Timestamp end_time = 5;
+  // Pagination.
+  int32 page_size = 6;
+  string page_token = 7;
+}
+
+// ListWebhookDeliveriesResponse returns webhook deliveries.
+message ListWebhookDeliveriesResponse {
+  // List of webhook deliveries.
+  repeated WebhookDelivery deliveries = 1;
+  // Token for the next page.
+  string next_page_token = 2;
+}
+
+// GetWebhookDeliveryRequest specifies which delivery to retrieve.
+message GetWebhookDeliveryRequest {
+  // ID of the delivery.
+  string delivery_id = 1;
+  // Whether to include the full payload.
+  bool include_payload = 2;
+}
+
+// GetWebhookDeliveryResponse returns the webhook delivery details.
+message GetWebhookDeliveryResponse {
+  // The webhook delivery.
+  WebhookDelivery delivery = 1;
+  // Raw payload if requested.
+  bytes payload = 2;
+}
+
+// RetryWebhookDeliveryRequest specifies which delivery to retry.
+message RetryWebhookDeliveryRequest {
+  // ID of the delivery to retry.
+  string delivery_id = 1;
+}
+
+// WebhookDelivery records a webhook that was received.
+message WebhookDelivery {
+  // Unique delivery ID.
+  string id = 1;
+  // Git provider (github, gitlab, bitbucket).
+  string provider = 2;
+  // Event type from the provider.
+  string event_type = 3;
+  // Repository URL from the webhook.
+  string repository_url = 4;
+  // Branch or ref affected.
+  string ref = 5;
+  // Commit SHA if applicable.
+  string commit_sha = 6;
+  // Processing status.
+  WebhookStatus status = 7;
+  // Error message if processing failed.
+  string error_message = 8;
+  // Run IDs triggered by this webhook.
+  repeated string triggered_run_ids = 9;
+  // When the webhook was received.
+  google.protobuf.Timestamp received_at = 10;
+  // When processing completed.
+  google.protobuf.Timestamp processed_at = 11;
+  // Number of retry attempts.
+  int32 retry_count = 12;
+  // IP address of the sender.
+  string sender_ip = 13;
+}

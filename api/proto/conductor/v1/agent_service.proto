@@ -1,0 +1,345 @@
+// Copyright 2024 Conductor Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package conductor.v1;
+
+option go_package = "github.com/conductor/conductor/api/gen/conductor/v1;conductorv1";
+
+import "google/protobuf/timestamp.proto";
+import "conductor/v1/common.proto";
+
+// AgentService handles bidirectional communication between agents and the control plane.
+// Agents connect outbound to the control plane and maintain a persistent stream
+// for receiving work assignments and sending results.
+service AgentService {
+  // WorkStream establishes a bidirectional streaming connection between an agent
+  // and the control plane. The agent sends registration, heartbeats, and results;
+  // the control plane sends work assignments and control commands.
+  rpc WorkStream(stream AgentMessage) returns (stream ControlMessage);
+}
+
+// AgentMessage is sent from an agent to the control plane.
+message AgentMessage {
+  oneof message {
+    // Initial registration when agent connects.
+    RegisterRequest register = 1;
+    // Periodic heartbeat to maintain connection and report status.
+    Heartbeat heartbeat = 2;
+    // Agent accepts an assigned work item.
+    WorkAccepted work_accepted = 3;
+    // Agent rejects an assigned work item (e.g., resource constraints).
+    WorkRejected work_rejected = 4;
+    // Streaming results from test execution.
+    ResultStream result_stream = 5;
+  }
+}
+
+// ControlMessage is sent from the control plane to an agent.
+message ControlMessage {
+  oneof message {
+    // Response to agent registration.
+    RegisterResponse register_response = 1;
+    // Assignment of work to the agent.
+    AssignWork assign_work = 2;
+    // Request to cancel an in-progress run.
+    CancelWork cancel_work = 3;
+    // Request to drain the agent (finish current work, accept no new work).
+    Drain drain = 4;
+    // Acknowledgement of received messages.
+    Ack ack = 5;
+  }
+}
+
+// RegisterRequest is sent by an agent when it first connects to the control plane.
+message RegisterRequest {
+  // Unique identifier for this agent instance.
+  // Should be stable across restarts if possible (e.g., hostname-based).
+  string agent_id = 1;
+  // Human-readable name for the agent.
+  string name = 2;
+  // Semantic version of the agent software.
+  string version = 3;
+  // Agent's capabilities and constraints.
+  Capabilities capabilities = 4;
+  // Labels for agent selection and filtering.
+  map<string, string> labels = 5;
+}
+
+// Capabilities describes what an agent can do and its resource constraints.
+message Capabilities {
+  // Network zones this agent can access (e.g., "prod", "staging", "internal").
+  // Used to route tests to agents that can reach required services.
+  repeated string network_zones = 1;
+  // Available runtime environments (e.g., "node18", "python3.11", "go1.21").
+  repeated string runtimes = 2;
+  // Maximum number of parallel test runs this agent can handle.
+  int32 max_parallel = 3;
+  // Whether Docker is available for container execution mode.
+  bool docker_available = 4;
+  // Available system resources.
+  Resources resources = 5;
+  // Operating system (e.g., "linux", "darwin", "windows").
+  string os = 6;
+  // CPU architecture (e.g., "amd64", "arm64").
+  string arch = 7;
+}
+
+// Resources describes available system resources on an agent.
+message Resources {
+  // Number of CPU cores available.
+  int32 cpu_cores = 1;
+  // Total memory available in bytes.
+  int64 memory_bytes = 2;
+  // Total disk space available in bytes.
+  int64 disk_bytes = 3;
+}
+
+// RegisterResponse is sent by the control plane in response to agent registration.
+message RegisterResponse {
+  // Whether registration was successful.
+  bool success = 1;
+  // Error message if registration failed.
+  string error_message = 2;
+  // Configured heartbeat interval in seconds.
+  int32 heartbeat_interval_seconds = 3;
+  // Server version for compatibility checking.
+  string server_version = 4;
+}
+
+// Heartbeat is sent periodically by agents to maintain their connection
+// and report current status.
+message Heartbeat {
+  // Current agent status.
+  AgentStatus status = 1;
+  // IDs of currently active test runs.
+  repeated string active_run_ids = 2;
+  // Current resource utilization.
+  ResourceUsage resource_usage = 3;
+  // Agent local timestamp for clock drift detection.
+  google.protobuf.Timestamp timestamp = 4;
+}
+
+// WorkAccepted indicates the agent has accepted an assigned work item.
+message WorkAccepted {
+  // ID of the accepted run.
+  string run_id = 1;
+  // Estimated start time.
+  google.protobuf.Timestamp estimated_start = 2;
+}
+
+// WorkRejected indicates the agent cannot accept the assigned work.
+message WorkRejected {
+  // ID of the rejected run.
+  string run_id = 1;
+  // Reason for rejection.
+  string reason = 2;
+  // Whether this rejection is temporary (agent may accept later).
+  bool temporary = 3;
+}
+
+// AssignWork sends a test run to an agent for execution.
+message AssignWork {
+  // Unique identifier for this test run.
+  string run_id = 1;
+  // Git repository and ref to check out.
+  GitRef git_ref = 2;
+  // Tests to execute.
+  repeated TestToRun tests = 3;
+  // Environment variables to set during execution.
+  map<string, string> environment = 4;
+  // Secrets to inject (will be decrypted by agent).
+  repeated Secret secrets = 5;
+  // Maximum duration for the entire run.
+  Duration timeout = 6;
+  // Execution mode (subprocess or container).
+  ExecutionType execution_type = 7;
+  // Container image to use if execution_type is CONTAINER.
+  string container_image = 8;
+  // Working directory relative to repository root.
+  string working_directory = 9;
+  // Setup commands to run before tests.
+  repeated string setup_commands = 10;
+  // Teardown commands to run after tests.
+  repeated string teardown_commands = 11;
+  // Priority for scheduling (higher = more urgent).
+  int32 priority = 12;
+}
+
+// TestToRun specifies a test or test suite to execute.
+message TestToRun {
+  // Test definition ID from the registry.
+  string test_id = 1;
+  // Human-readable test name.
+  string name = 2;
+  // Command to execute the test.
+  string command = 3;
+  // Expected result format.
+  ResultFormat result_format = 4;
+  // Test-specific timeout (overrides run timeout).
+  Duration timeout = 5;
+  // Test-specific environment variables.
+  map<string, string> environment = 6;
+  // Path pattern for artifact collection.
+  repeated string artifact_paths = 7;
+  // Retry count for flaky tests.
+  int32 retry_count = 8;
+}
+
+// Secret represents an encrypted secret to be injected into the test environment.
+message Secret {
+  // Name of the environment variable to set.
+  string name = 1;
+  // Encrypted secret value (agent decrypts using its key).
+  bytes encrypted_value = 2;
+  // Key ID used for encryption.
+  string key_id = 3;
+}
+
+// CancelWork requests cancellation of an in-progress test run.
+message CancelWork {
+  // ID of the run to cancel.
+  string run_id = 1;
+  // Reason for cancellation.
+  string reason = 2;
+  // Grace period before forceful termination.
+  Duration grace_period = 3;
+}
+
+// Drain requests the agent to stop accepting new work.
+message Drain {
+  // Reason for draining.
+  string reason = 1;
+  // Whether to cancel in-progress runs.
+  bool cancel_active = 2;
+  // Deadline by which agent should be fully drained.
+  google.protobuf.Timestamp deadline = 3;
+}
+
+// Ack acknowledges receipt of a message.
+message Ack {
+  // ID of the acknowledged message or run.
+  string id = 1;
+  // Whether the operation was successful.
+  bool success = 2;
+  // Error message if not successful.
+  string error_message = 3;
+}
+
+// ResultStream carries test execution results from agent to control plane.
+message ResultStream {
+  // ID of the run these results belong to.
+  string run_id = 1;
+  // Sequence number for ordering.
+  int64 sequence = 2;
+  
+  oneof payload {
+    // Chunk of log output.
+    LogChunk log_chunk = 3;
+    // Individual test result.
+    TestResultEvent test_result = 4;
+    // Artifact upload notification.
+    ArtifactUploaded artifact = 5;
+    // Run completion notification.
+    RunComplete run_complete = 6;
+    // Progress update.
+    ProgressUpdate progress = 7;
+  }
+}
+
+// LogChunk is a chunk of log output from test execution.
+message LogChunk {
+  // Which stream this log came from.
+  LogStream stream = 1;
+  // Log content (UTF-8 encoded).
+  bytes data = 2;
+  // Timestamp when this log was captured.
+  google.protobuf.Timestamp timestamp = 3;
+  // Test ID if this log is from a specific test.
+  string test_id = 4;
+}
+
+// TestResultEvent reports the outcome of an individual test.
+message TestResultEvent {
+  // Test definition ID.
+  string test_id = 1;
+  // Test name as reported by the test framework.
+  string test_name = 2;
+  // Test outcome.
+  TestStatus status = 3;
+  // Duration of test execution.
+  Duration duration = 4;
+  // Error message if test failed.
+  string error_message = 5;
+  // Stack trace if available.
+  string stack_trace = 6;
+  // Retry attempt number (0 for first attempt).
+  int32 retry_attempt = 7;
+  // Timestamp when test completed.
+  google.protobuf.Timestamp timestamp = 8;
+  // Additional metadata from the test framework.
+  map<string, string> metadata = 9;
+}
+
+// ArtifactUploaded notifies that an artifact has been uploaded.
+message ArtifactUploaded {
+  // Unique artifact ID.
+  string artifact_id = 1;
+  // Human-readable name.
+  string name = 2;
+  // Original file path relative to workspace.
+  string path = 3;
+  // MIME content type.
+  string content_type = 4;
+  // Size in bytes.
+  int64 size = 5;
+  // Storage URL (S3/MinIO path).
+  string storage_url = 6;
+  // SHA256 checksum for integrity verification.
+  string checksum = 7;
+}
+
+// RunComplete signals that a test run has finished.
+message RunComplete {
+  // Final status of the run.
+  RunStatus status = 1;
+  // Summary of test results.
+  RunSummary summary = 2;
+  // Error message if run failed due to infrastructure issues.
+  string error_message = 3;
+  // Total duration of the run.
+  Duration duration = 4;
+  // Timestamp when run completed.
+  google.protobuf.Timestamp timestamp = 5;
+}
+
+// RunSummary provides aggregate statistics for a test run.
+message RunSummary {
+  // Total number of tests executed.
+  int32 total = 1;
+  // Number of tests that passed.
+  int32 passed = 2;
+  // Number of tests that failed.
+  int32 failed = 3;
+  // Number of tests that were skipped.
+  int32 skipped = 4;
+  // Number of tests that encountered errors.
+  int32 errored = 5;
+  // Total duration of all tests.
+  Duration duration = 6;
+}
+
+// ProgressUpdate provides periodic progress information during a run.
+message ProgressUpdate {
+  // Current phase of execution.
+  string phase = 1;
+  // Human-readable progress message.
+  string message = 2;
+  // Progress percentage (0-100) if known.
+  int32 percent_complete = 3;
+  // Number of tests completed so far.
+  int32 tests_completed = 4;
+  // Total number of tests.
+  int32 tests_total = 5;
+}

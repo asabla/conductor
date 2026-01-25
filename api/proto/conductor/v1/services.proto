@@ -1,0 +1,412 @@
+// Copyright 2024 Conductor Authors
+// SPDX-License-Identifier: Apache-2.0
+
+syntax = "proto3";
+
+package conductor.v1;
+
+option go_package = "github.com/conductor/conductor/api/gen/conductor/v1;conductorv1";
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "conductor/v1/common.proto";
+
+// ServiceRegistryService manages the registry of services and their test definitions.
+service ServiceRegistryService {
+  // CreateService registers a new service in the registry.
+  rpc CreateService(CreateServiceRequest) returns (CreateServiceResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/services"
+      body: "*"
+    };
+  }
+
+  // GetService retrieves a service by ID.
+  rpc GetService(GetServiceRequest) returns (GetServiceResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/services/{service_id}"
+    };
+  }
+
+  // ListServices returns a paginated list of services.
+  rpc ListServices(ListServicesRequest) returns (ListServicesResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/services"
+    };
+  }
+
+  // UpdateService updates a service's configuration.
+  rpc UpdateService(UpdateServiceRequest) returns (UpdateServiceResponse) {
+    option (google.api.http) = {
+      patch: "/api/v1/services/{service_id}"
+      body: "*"
+    };
+  }
+
+  // DeleteService removes a service from the registry.
+  rpc DeleteService(DeleteServiceRequest) returns (DeleteServiceResponse) {
+    option (google.api.http) = {
+      delete: "/api/v1/services/{service_id}"
+    };
+  }
+
+  // SyncService triggers discovery of test definitions from the repository.
+  rpc SyncService(SyncServiceRequest) returns (SyncServiceResponse) {
+    option (google.api.http) = {
+      post: "/api/v1/services/{service_id}/sync"
+      body: "*"
+    };
+  }
+
+  // GetTestDefinition retrieves a specific test definition.
+  rpc GetTestDefinition(GetTestDefinitionRequest) returns (GetTestDefinitionResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/services/{service_id}/tests/{test_id}"
+    };
+  }
+
+  // ListTestDefinitions returns test definitions for a service.
+  rpc ListTestDefinitions(ListTestDefinitionsRequest) returns (ListTestDefinitionsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/services/{service_id}/tests"
+    };
+  }
+
+  // UpdateTestDefinition updates a test definition.
+  rpc UpdateTestDefinition(UpdateTestDefinitionRequest) returns (UpdateTestDefinitionResponse) {
+    option (google.api.http) = {
+      patch: "/api/v1/services/{service_id}/tests/{test_id}"
+      body: "*"
+    };
+  }
+}
+
+// CreateServiceRequest specifies parameters for creating a new service.
+message CreateServiceRequest {
+  // Human-readable name.
+  string name = 1;
+  // Git repository URL.
+  string git_url = 2;
+  // Default branch to test.
+  string default_branch = 3;
+  // Network zones this service's tests can run in.
+  repeated string network_zones = 4;
+  // Team or individual owning this service.
+  string owner = 5;
+  // Contact information for the service owner.
+  Contact contact = 6;
+  // Default execution type for tests.
+  ExecutionType default_execution_type = 7;
+  // Default container image for container execution.
+  string default_container_image = 8;
+  // Default timeout for test runs.
+  Duration default_timeout = 9;
+  // Path to Conductor config file in repo.
+  string config_path = 10;
+  // Labels for filtering and organization.
+  map<string, string> labels = 11;
+}
+
+// CreateServiceResponse returns the created service.
+message CreateServiceResponse {
+  // The created service.
+  Service service = 1;
+}
+
+// GetServiceRequest specifies which service to retrieve.
+message GetServiceRequest {
+  // ID of the service.
+  string service_id = 1;
+  // Whether to include test definitions.
+  bool include_tests = 2;
+  // Whether to include recent runs.
+  bool include_recent_runs = 3;
+}
+
+// GetServiceResponse returns the requested service.
+message GetServiceResponse {
+  // The requested service.
+  Service service = 1;
+  // Test definitions if requested.
+  repeated TestDefinition tests = 2;
+  // Recent runs if requested.
+  repeated RecentRun recent_runs = 3;
+}
+
+// RecentRun is a summary of a recent test run.
+message RecentRun {
+  // Run ID.
+  string id = 1;
+  // Run status.
+  RunStatus status = 2;
+  // Git branch.
+  string branch = 3;
+  // Commit SHA.
+  string commit_sha = 4;
+  // When the run was created.
+  google.protobuf.Timestamp created_at = 5;
+  // Run duration.
+  Duration duration = 6;
+  // Test summary.
+  int32 passed = 7;
+  int32 failed = 8;
+  int32 total = 9;
+}
+
+// ListServicesRequest specifies filtering and pagination.
+message ListServicesRequest {
+  // Filter by owner.
+  string owner = 1;
+  // Filter by network zone.
+  string network_zone = 2;
+  // Filter by labels.
+  map<string, string> labels = 3;
+  // Search query (searches name, owner).
+  string query = 4;
+  // Pagination.
+  Pagination pagination = 5;
+}
+
+// ListServicesResponse returns a paginated list of services.
+message ListServicesResponse {
+  // List of services.
+  repeated Service services = 1;
+  // Pagination response.
+  PaginationResponse pagination = 2;
+}
+
+// UpdateServiceRequest specifies fields to update.
+message UpdateServiceRequest {
+  // ID of the service to update.
+  string service_id = 1;
+  // New name (optional).
+  optional string name = 2;
+  // New git URL (optional).
+  optional string git_url = 3;
+  // New default branch (optional).
+  optional string default_branch = 4;
+  // New network zones (optional, replaces existing).
+  repeated string network_zones = 5;
+  // New owner (optional).
+  optional string owner = 6;
+  // New contact (optional).
+  Contact contact = 7;
+  // New default execution type (optional).
+  ExecutionType default_execution_type = 8;
+  // New default container image (optional).
+  optional string default_container_image = 9;
+  // New default timeout (optional).
+  Duration default_timeout = 10;
+  // New config path (optional).
+  optional string config_path = 11;
+  // Labels to merge (optional).
+  map<string, string> labels = 12;
+  // Whether the service is active.
+  optional bool active = 13;
+}
+
+// UpdateServiceResponse returns the updated service.
+message UpdateServiceResponse {
+  // The updated service.
+  Service service = 1;
+}
+
+// DeleteServiceRequest specifies which service to delete.
+message DeleteServiceRequest {
+  // ID of the service to delete.
+  string service_id = 1;
+  // Whether to also delete run history.
+  bool delete_history = 2;
+}
+
+// DeleteServiceResponse confirms the deletion.
+message DeleteServiceResponse {
+  // Whether deletion was successful.
+  bool success = 1;
+}
+
+// SyncServiceRequest triggers test discovery.
+message SyncServiceRequest {
+  // ID of the service to sync.
+  string service_id = 1;
+  // Specific branch to sync (uses default if empty).
+  string branch = 2;
+  // Whether to delete tests not found in the repo.
+  bool delete_missing = 3;
+}
+
+// SyncServiceResponse returns the sync results.
+message SyncServiceResponse {
+  // Number of tests added.
+  int32 tests_added = 1;
+  // Number of tests updated.
+  int32 tests_updated = 2;
+  // Number of tests removed.
+  int32 tests_removed = 3;
+  // Errors encountered during sync.
+  repeated string errors = 4;
+  // When the sync completed.
+  google.protobuf.Timestamp synced_at = 5;
+}
+
+// GetTestDefinitionRequest specifies which test to retrieve.
+message GetTestDefinitionRequest {
+  // Service ID.
+  string service_id = 1;
+  // Test ID.
+  string test_id = 2;
+}
+
+// GetTestDefinitionResponse returns the test definition.
+message GetTestDefinitionResponse {
+  // The test definition.
+  TestDefinition test = 1;
+}
+
+// ListTestDefinitionsRequest specifies filtering.
+message ListTestDefinitionsRequest {
+  // Service ID.
+  string service_id = 1;
+  // Filter by test type.
+  TestType type = 2;
+  // Filter by tags.
+  repeated string tags = 3;
+  // Whether to include disabled tests.
+  bool include_disabled = 4;
+  // Pagination.
+  Pagination pagination = 5;
+}
+
+// ListTestDefinitionsResponse returns test definitions.
+message ListTestDefinitionsResponse {
+  // List of test definitions.
+  repeated TestDefinition tests = 1;
+  // Pagination response.
+  PaginationResponse pagination = 2;
+}
+
+// UpdateTestDefinitionRequest specifies fields to update.
+message UpdateTestDefinitionRequest {
+  // Service ID.
+  string service_id = 1;
+  // Test ID.
+  string test_id = 2;
+  // New name (optional).
+  optional string name = 3;
+  // New command (optional).
+  optional string command = 4;
+  // New timeout (optional).
+  Duration timeout = 5;
+  // New tags (optional, replaces existing).
+  repeated string tags = 6;
+  // Whether the test is enabled.
+  optional bool enabled = 7;
+  // New retry count (optional).
+  optional int32 retry_count = 8;
+}
+
+// UpdateTestDefinitionResponse returns the updated test.
+message UpdateTestDefinitionResponse {
+  // The updated test definition.
+  TestDefinition test = 1;
+}
+
+// Service represents a registered service in the test registry.
+message Service {
+  // Unique identifier.
+  string id = 1;
+  // Human-readable name.
+  string name = 2;
+  // Git repository URL.
+  string git_url = 3;
+  // Default branch for testing.
+  string default_branch = 4;
+  // Network zones where tests can run.
+  repeated string network_zones = 5;
+  // Team or individual owning this service.
+  string owner = 6;
+  // Contact information.
+  Contact contact = 7;
+  // Default execution type.
+  ExecutionType default_execution_type = 8;
+  // Default container image.
+  string default_container_image = 9;
+  // Default timeout for runs.
+  Duration default_timeout = 10;
+  // Path to Conductor config in repo.
+  string config_path = 11;
+  // Labels for filtering.
+  map<string, string> labels = 12;
+  // Whether the service is active.
+  bool active = 13;
+  // When the service was created.
+  google.protobuf.Timestamp created_at = 14;
+  // When the service was last updated.
+  google.protobuf.Timestamp updated_at = 15;
+  // When tests were last synced from the repo.
+  google.protobuf.Timestamp last_synced_at = 16;
+  // Count of test definitions.
+  int32 test_count = 17;
+}
+
+// TestType categorizes the kind of test.
+enum TestType {
+  // Default value, should not be used.
+  TEST_TYPE_UNSPECIFIED = 0;
+  // Unit tests - fast, isolated tests.
+  TEST_TYPE_UNIT = 1;
+  // Integration tests - tests with dependencies.
+  TEST_TYPE_INTEGRATION = 2;
+  // End-to-end tests - full system tests.
+  TEST_TYPE_E2E = 3;
+  // Performance/load tests.
+  TEST_TYPE_PERFORMANCE = 4;
+  // Security/penetration tests.
+  TEST_TYPE_SECURITY = 5;
+  // Smoke tests - quick health checks.
+  TEST_TYPE_SMOKE = 6;
+}
+
+// TestDefinition describes a test or test suite that can be executed.
+message TestDefinition {
+  // Unique identifier.
+  string id = 1;
+  // Service this test belongs to.
+  string service_id = 2;
+  // Human-readable name.
+  string name = 3;
+  // Full test path (e.g., "tests/unit/test_auth.py").
+  string path = 4;
+  // Test type/category.
+  TestType type = 5;
+  // Command to execute the test.
+  string command = 6;
+  // Expected result format.
+  ResultFormat result_format = 7;
+  // Test-specific timeout.
+  Duration timeout = 8;
+  // Tags for filtering (e.g., ["slow", "database", "auth"]).
+  repeated string tags = 9;
+  // Environment variables specific to this test.
+  map<string, string> environment = 10;
+  // Pattern for artifact collection.
+  repeated string artifact_paths = 11;
+  // Whether the test is enabled.
+  bool enabled = 12;
+  // Number of retry attempts for flaky tests.
+  int32 retry_count = 13;
+  // Required runtimes (e.g., ["node18", "postgres"]).
+  repeated string required_runtimes = 14;
+  // Required network zones.
+  repeated string required_network_zones = 15;
+  // When the definition was created.
+  google.protobuf.Timestamp created_at = 16;
+  // When the definition was last updated.
+  google.protobuf.Timestamp updated_at = 17;
+  // Estimated duration based on historical runs.
+  Duration estimated_duration = 18;
+  // Historical flakiness rate (0.0 - 1.0).
+  double flakiness_rate = 19;
+}
+
+// Note: RunStatus is imported from conductor/v1/common.proto
