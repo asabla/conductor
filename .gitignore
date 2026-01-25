@@ -1,11 +1,15 @@
 # OS
 .DS_Store
+Thumbs.db
 
 # IDE/Editor
 .idea/
 .vscode/
 *.swp
 *.swo
+*~
+\#*\#
+.\#*
 
 # Go binaries
 bin/
@@ -19,6 +23,7 @@ bin/
 *.test
 *.out
 coverage.*
+coverage.html
 *.coverprofile
 profile.cov
 
@@ -33,11 +38,40 @@ vendor/
 # Build outputs
 dist/
 build/
+web/dist/
+web/.next/
+web/build/
 
 # Environment
 .env
 .env.local
 .env.*.local
+*.env
 
 # Logs
 *.log
+logs/
+
+# Generated files
+api/gen/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# Docker
+docker-compose.override.yml
+
+# Kubernetes secrets (should never be committed)
+deploy/kubernetes/**/secrets.yaml
+deploy/kubernetes/**/*-secret.yaml
+
+# Test artifacts
+test-results/
+playwright-report/
