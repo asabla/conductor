@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -250,6 +251,43 @@ func (r *artifactRepo) ListByRun(ctx context.Context, runID uuid.UUID) ([]Artifa
 	rows, err := r.db.pool.Query(ctx, ArtifactListByRun, runID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list artifacts: %w", err)
+	}
+	defer rows.Close()
+
+	var artifacts []Artifact
+	for rows.Next() {
+		var artifact Artifact
+		err := rows.Scan(
+			&artifact.ID,
+			&artifact.RunID,
+			&artifact.Name,
+			&artifact.Path,
+			&artifact.ContentType,
+			&artifact.SizeBytes,
+			&artifact.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan artifact: %w", err)
+		}
+		artifacts = append(artifacts, artifact)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating artifacts: %w", err)
+	}
+
+	return artifacts, nil
+}
+
+// ListOlderThan returns artifacts older than a timestamp.
+func (r *artifactRepo) ListOlderThan(ctx context.Context, before time.Time, limit int) ([]Artifact, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	rows, err := r.db.pool.Query(ctx, ArtifactListOlderThan, before, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list artifacts by age: %w", err)
 	}
 	defer rows.Close()
 

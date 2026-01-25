@@ -88,7 +88,7 @@
 - [x] Artifact listing
 - [x] Wire adapter for server integration
 - [x] Control plane integration
-- [ ] Artifact cleanup policies
+- [x] Artifact cleanup policies
 
 ### Priority 4: Git Provider Integration
 - [x] GitHub API client (with rate limiting, retries, full API)

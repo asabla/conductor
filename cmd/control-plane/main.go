@@ -129,9 +129,26 @@ func main() {
 	}
 
 	// Create artifact storage
-	artifactStorage, err := createArtifactStorage(cfg, logger)
+	artifactStorage, artifactStorageAdapter, err := createArtifactStorage(cfg, logger)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("failed to create artifact storage")
+	}
+
+	if cfg.Storage.CleanupEnabled {
+		cleanupLogger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level: slog.LevelInfo,
+		})).With("component", "artifact_cleanup")
+		cleanupService := artifact.NewCleanupService(
+			repos.Artifacts,
+			artifactStorage,
+			artifact.CleanupConfig{
+				Interval:  cfg.Storage.CleanupInterval,
+				Retention: cfg.Storage.RetentionPeriod,
+				BatchSize: cfg.Storage.CleanupBatchSize,
+			},
+			cleanupLogger,
+		)
+		cleanupService.Start(ctx)
 	}
 
 	// Create JWT validator
@@ -190,7 +207,7 @@ func main() {
 			ResultRepo:      resultRepo,
 			ArtifactRepo:    artifactRepo,
 			RunRepo:         runRepo,
-			ArtifactStorage: artifactStorage,
+			ArtifactStorage: artifactStorageAdapter,
 		},
 		HealthService: server.HealthServiceDeps{
 			DB:        db,
@@ -428,7 +445,7 @@ func setupLogger() zerolog.Logger {
 }
 
 // createArtifactStorage creates the artifact storage backend.
-func createArtifactStorage(cfg *config.Config, logger zerolog.Logger) (server.ArtifactStorage, error) {
+func createArtifactStorage(cfg *config.Config, logger zerolog.Logger) (*artifact.Storage, server.ArtifactStorage, error) {
 	// Create slog adapter for artifact storage
 	slogHandler := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
@@ -448,7 +465,7 @@ func createArtifactStorage(cfg *config.Config, logger zerolog.Logger) (server.Ar
 
 	storage, err := artifact.NewStorage(storageCfg, slogLogger)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create storage client: %w", err)
+		return nil, nil, fmt.Errorf("failed to create storage client: %w", err)
 	}
 
 	// Ensure bucket exists
@@ -469,7 +486,7 @@ func createArtifactStorage(cfg *config.Config, logger zerolog.Logger) (server.Ar
 			Msg("artifact storage initialized")
 	}
 
-	return wire.NewArtifactStorageAdapter(storage), nil
+	return storage, wire.NewArtifactStorageAdapter(storage), nil
 }
 
 // createGitSyncer creates the git syncer if configured.

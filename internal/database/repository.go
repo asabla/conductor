@@ -190,6 +190,9 @@ type ArtifactRepository interface {
 	// ListByRun returns all artifacts for a test run.
 	ListByRun(ctx context.Context, runID uuid.UUID) ([]Artifact, error)
 
+	// ListOlderThan returns artifacts older than a timestamp.
+	ListOlderThan(ctx context.Context, before time.Time, limit int) ([]Artifact, error)
+
 	// Delete deletes an artifact record.
 	Delete(ctx context.Context, id uuid.UUID) error
 

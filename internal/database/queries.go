@@ -416,6 +416,14 @@ const (
 		WHERE run_id = $1
 		ORDER BY name ASC`
 
+	// ArtifactListOlderThan lists artifacts older than a timestamp.
+	ArtifactListOlderThan = `
+		SELECT id, run_id, name, path, content_type, size_bytes, created_at
+		FROM artifacts
+		WHERE created_at < $1
+		ORDER BY created_at ASC
+		LIMIT $2`
+
 	// ArtifactDelete deletes an artifact.
 	ArtifactDelete = `DELETE FROM artifacts WHERE id = $1`
 

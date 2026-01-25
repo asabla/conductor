@@ -70,6 +70,14 @@ type StorageConfig struct {
 	UseSSL bool
 	// PathStyle forces path-style addressing (default: true for MinIO compatibility)
 	PathStyle bool
+	// CleanupEnabled enables periodic artifact cleanup (default: false)
+	CleanupEnabled bool
+	// CleanupInterval is how often to run cleanup (default: 1h)
+	CleanupInterval time.Duration
+	// RetentionPeriod controls how long to keep artifacts (default: 30d)
+	RetentionPeriod time.Duration
+	// CleanupBatchSize limits artifacts deleted per run (default: 100)
+	CleanupBatchSize int
 }
 
 // RedisConfig holds Redis connection settings.
@@ -205,13 +213,17 @@ func Load() (*Config, error) {
 			QueryTimeout:    getEnvDuration("CONDUCTOR_DATABASE_QUERY_TIMEOUT", 30*time.Second),
 		},
 		Storage: StorageConfig{
-			Endpoint:        getEnv("CONDUCTOR_STORAGE_ENDPOINT", ""),
-			Bucket:          getEnv("CONDUCTOR_STORAGE_BUCKET", ""),
-			Region:          getEnv("CONDUCTOR_STORAGE_REGION", "us-east-1"),
-			AccessKeyID:     getEnv("CONDUCTOR_STORAGE_ACCESS_KEY_ID", ""),
-			SecretAccessKey: getEnv("CONDUCTOR_STORAGE_SECRET_ACCESS_KEY", ""),
-			UseSSL:          getEnvBool("CONDUCTOR_STORAGE_USE_SSL", true),
-			PathStyle:       getEnvBool("CONDUCTOR_STORAGE_PATH_STYLE", true),
+			Endpoint:         getEnv("CONDUCTOR_STORAGE_ENDPOINT", ""),
+			Bucket:           getEnv("CONDUCTOR_STORAGE_BUCKET", ""),
+			Region:           getEnv("CONDUCTOR_STORAGE_REGION", "us-east-1"),
+			AccessKeyID:      getEnv("CONDUCTOR_STORAGE_ACCESS_KEY_ID", ""),
+			SecretAccessKey:  getEnv("CONDUCTOR_STORAGE_SECRET_ACCESS_KEY", ""),
+			UseSSL:           getEnvBool("CONDUCTOR_STORAGE_USE_SSL", true),
+			PathStyle:        getEnvBool("CONDUCTOR_STORAGE_PATH_STYLE", true),
+			CleanupEnabled:   getEnvBool("CONDUCTOR_STORAGE_CLEANUP_ENABLED", false),
+			CleanupInterval:  getEnvDuration("CONDUCTOR_STORAGE_CLEANUP_INTERVAL", time.Hour),
+			RetentionPeriod:  getEnvDuration("CONDUCTOR_STORAGE_RETENTION", 30*24*time.Hour),
+			CleanupBatchSize: getEnvInt("CONDUCTOR_STORAGE_CLEANUP_BATCH_SIZE", 100),
 		},
 		Redis: RedisConfig{
 			URL:          getEnv("CONDUCTOR_REDIS_URL", ""),
@@ -324,6 +336,17 @@ func (c *Config) Validate() error {
 	// Storage validation (required)
 	if c.Storage.Bucket == "" {
 		errs = append(errs, errors.New("CONDUCTOR_STORAGE_BUCKET is required"))
+	}
+	if c.Storage.CleanupEnabled {
+		if c.Storage.RetentionPeriod <= 0 {
+			errs = append(errs, errors.New("CONDUCTOR_STORAGE_RETENTION must be greater than 0 when cleanup is enabled"))
+		}
+		if c.Storage.CleanupInterval <= 0 {
+			errs = append(errs, errors.New("CONDUCTOR_STORAGE_CLEANUP_INTERVAL must be greater than 0 when cleanup is enabled"))
+		}
+		if c.Storage.CleanupBatchSize <= 0 {
+			errs = append(errs, errors.New("CONDUCTOR_STORAGE_CLEANUP_BATCH_SIZE must be greater than 0 when cleanup is enabled"))
+		}
 	}
 	if c.Storage.AccessKeyID == "" {
 		errs = append(errs, errors.New("CONDUCTOR_STORAGE_ACCESS_KEY_ID is required"))
