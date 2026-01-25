@@ -1,0 +1,125 @@
+# =============================================================================
+# Dockerfile.control-plane
+# =============================================================================
+# Multi-stage build for the Conductor Control Plane service
+#
+# Build: docker build -f Dockerfile.control-plane -t conductor/control-plane .
+# Run:   docker run -p 8080:8080 -p 9090:9090 conductor/control-plane
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Stage 1: Build
+# -----------------------------------------------------------------------------
+ARG GO_VERSION=1.22
+FROM golang:${GO_VERSION}-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache \
+    git \
+    ca-certificates \
+    tzdata \
+    make \
+    gcc \
+    musl-dev
+
+# Set working directory
+WORKDIR /build
+
+# Copy dependency files first for better caching
+COPY go.mod go.sum ./
+RUN go mod download && go mod verify
+
+# Copy source code
+COPY . .
+
+# Build arguments
+ARG VERSION=dev
+ARG COMMIT_SHA=unknown
+ARG BUILD_TIME=unknown
+
+# Build the binary with optimizations
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -ldflags="-w -s \
+        -X 'main.Version=${VERSION}' \
+        -X 'main.CommitSHA=${COMMIT_SHA}' \
+        -X 'main.BuildTime=${BUILD_TIME}'" \
+    -o /build/bin/control-plane \
+    ./cmd/control-plane
+
+# Build health check binary
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -ldflags="-w -s" \
+    -o /build/bin/healthcheck \
+    ./cmd/control-plane/healthcheck 2>/dev/null || \
+    echo '#!/bin/sh\nwget -q --spider http://localhost:8080/health || exit 1' > /build/bin/healthcheck
+
+# -----------------------------------------------------------------------------
+# Stage 2: Production Image
+# -----------------------------------------------------------------------------
+FROM alpine:3.19 AS production
+
+# Install runtime dependencies
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    wget \
+    curl \
+    && rm -rf /var/cache/apk/*
+
+# Create non-root user for security
+RUN addgroup -g 1000 conductor && \
+    adduser -u 1000 -G conductor -s /bin/sh -D conductor
+
+# Create necessary directories
+RUN mkdir -p /app /data /config && \
+    chown -R conductor:conductor /app /data /config
+
+# Copy timezone data
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
+
+# Copy binary from builder
+COPY --from=builder /build/bin/control-plane /app/control-plane
+
+# Copy migrations if they exist
+COPY --from=builder /build/migrations /app/migrations 2>/dev/null || true
+
+# Copy config templates if they exist
+COPY --from=builder /build/configs /app/configs 2>/dev/null || true
+
+# Set working directory
+WORKDIR /app
+
+# Switch to non-root user
+USER conductor
+
+# Environment variables
+ENV CONDUCTOR_ENV=production \
+    CONDUCTOR_HTTP_PORT=8080 \
+    CONDUCTOR_GRPC_PORT=9090 \
+    CONDUCTOR_METRICS_PORT=8081 \
+    CONDUCTOR_LOG_LEVEL=info \
+    CONDUCTOR_LOG_FORMAT=json \
+    TZ=UTC
+
+# Expose ports
+# 8080 - HTTP API (REST/grpc-gateway)
+# 9090 - gRPC API
+# 8081 - Metrics (Prometheus)
+EXPOSE 8080 9090 8081
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD wget -q --spider http://localhost:8080/health || exit 1
+
+# Labels
+LABEL org.opencontainers.image.title="Conductor Control Plane" \
+      org.opencontainers.image.description="Central coordination service for the Conductor test orchestration platform" \
+      org.opencontainers.image.vendor="Conductor" \
+      org.opencontainers.image.source="https://github.com/conductor/conductor" \
+      org.opencontainers.image.licenses="MIT" \
+      com.conductor.service="control-plane" \
+      com.conductor.component="api"
+
+# Default command
+ENTRYPOINT ["/app/control-plane"]
+CMD ["serve"]

@@ -1,0 +1,204 @@
+# Conductor Test Orchestration Platform - Test Environment Override
+# Usage: docker compose -f docker-compose.yml -f docker-compose.test.yml up -d
+#
+# This configuration provides:
+# - Isolated test databases with ephemeral storage
+# - Faster startup (no persistent volumes)
+# - Test-specific configuration
+# - Cleanup on shutdown
+
+services:
+  # =============================================================================
+  # PostgreSQL - Test database with ephemeral storage
+  # =============================================================================
+  postgres:
+    container_name: conductor-postgres-test
+    environment:
+      POSTGRES_USER: conductor_test
+      POSTGRES_PASSWORD: test_secret
+      POSTGRES_DB: conductor_test
+    ports:
+      - "${POSTGRES_TEST_PORT:-5433}:5432"
+    volumes:
+      # Override with tmpfs for faster ephemeral storage
+      - type: tmpfs
+        target: /var/lib/postgresql/data
+        tmpfs:
+          size: 536870912  # 512MB
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+    labels:
+      - "com.conductor.environment=test"
+
+  # =============================================================================
+  # MinIO - Test storage with ephemeral volumes
+  # =============================================================================
+  minio:
+    container_name: conductor-minio-test
+    environment:
+      MINIO_ROOT_USER: conductor_test
+      MINIO_ROOT_PASSWORD: test_secret
+    ports:
+      - "${MINIO_TEST_API_PORT:-9002}:9000"
+      - "${MINIO_TEST_CONSOLE_PORT:-9003}:9001"
+    volumes:
+      - type: tmpfs
+        target: /data
+        tmpfs:
+          size: 1073741824  # 1GB
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+    labels:
+      - "com.conductor.environment=test"
+
+  # =============================================================================
+  # MinIO Setup - Test bucket initialization
+  # =============================================================================
+  minio-setup:
+    container_name: conductor-minio-setup-test
+    environment:
+      MINIO_ROOT_USER: conductor_test
+      MINIO_ROOT_PASSWORD: test_secret
+      MINIO_BUCKET: conductor-test-artifacts
+    labels:
+      - "com.conductor.environment=test"
+
+  # =============================================================================
+  # Redis - Test cache with ephemeral storage
+  # =============================================================================
+  redis:
+    container_name: conductor-redis-test
+    command: redis-server --appendonly no --maxmemory 128mb --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_TEST_PORT:-6380}:6379"
+    volumes: []  # No persistence for tests
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 150M
+    labels:
+      - "com.conductor.environment=test"
+
+  # =============================================================================
+  # Control Plane - Test configuration
+  # =============================================================================
+  control-plane:
+    container_name: conductor-control-plane-test
+    environment:
+      CONDUCTOR_ENV: test
+      CONDUCTOR_LOG_LEVEL: warn
+      CONDUCTOR_LOG_FORMAT: json
+      
+      # Test database
+      DATABASE_URL: postgres://conductor_test:test_secret@postgres:5432/conductor_test?sslmode=disable
+      DATABASE_MAX_CONNECTIONS: 10
+      DATABASE_MAX_IDLE_CONNECTIONS: 2
+      
+      # Test storage
+      ARTIFACT_STORAGE_ACCESS_KEY: conductor_test
+      ARTIFACT_STORAGE_SECRET_KEY: test_secret
+      ARTIFACT_STORAGE_BUCKET: conductor-test-artifacts
+      
+      # Test security
+      JWT_SECRET: test-jwt-secret-not-for-production
+      AGENT_TOKEN_SECRET: test-agent-secret-not-for-production
+      
+      # Faster timeouts for tests
+      SCHEDULER_POLL_INTERVAL: 1s
+      AGENT_HEARTBEAT_TIMEOUT: 30s
+      AGENT_DRAIN_TIMEOUT: 30s
+      
+      # Test mode flags
+      CONDUCTOR_TEST_MODE: "true"
+      CONDUCTOR_SKIP_MIGRATIONS: ${SKIP_MIGRATIONS:-false}
+    ports:
+      - "${CONTROL_PLANE_TEST_HTTP_PORT:-8082}:8080"
+      - "${CONTROL_PLANE_TEST_GRPC_PORT:-9092}:9090"
+      - "${CONTROL_PLANE_TEST_METRICS_PORT:-8083}:8081"
+    healthcheck:
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+    labels:
+      - "com.conductor.environment=test"
+
+  # =============================================================================
+  # Agent - Test configuration (single instance)
+  # =============================================================================
+  agent:
+    container_name: conductor-agent-test
+    environment:
+      AGENT_NAME: test-agent
+      AGENT_LABELS: env=test,platform=linux
+      AGENT_TOKEN: test-agent-token
+      CONTROL_PLANE_URL: control-plane:9090
+      AGENT_MAX_CONCURRENT_TESTS: 2
+      AGENT_DEFAULT_TEST_TIMEOUT: 5m
+      AGENT_HEARTBEAT_INTERVAL: 10s
+      AGENT_LOG_LEVEL: warn
+      CONDUCTOR_TEST_MODE: "true"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Ephemeral workspace
+      - type: tmpfs
+        target: /workspace
+        tmpfs:
+          size: 536870912  # 512MB
+      - type: tmpfs
+        target: /data
+        tmpfs:
+          size: 104857600  # 100MB
+    healthcheck:
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    deploy:
+      mode: replicated
+      replicas: 1
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
+    labels:
+      - "com.conductor.environment=test"
+
+  # =============================================================================
+  # Dashboard - Disabled in test mode by default
+  # =============================================================================
+  dashboard:
+    profiles:
+      - with-dashboard  # Only start if explicitly requested
+    container_name: conductor-dashboard-test
+    environment:
+      VITE_API_URL: http://localhost:8082
+      VITE_WS_URL: ws://localhost:8082
+    ports:
+      - "${DASHBOARD_TEST_PORT:-3001}:80"
+    labels:
+      - "com.conductor.environment=test"
+
+# =============================================================================
+# Test-specific network (isolated from dev)
+# =============================================================================
+networks:
+  conductor-net:
+    name: conductor-test-net
+
+# =============================================================================
+# Empty volumes section - services use tmpfs instead of named volumes
+# =============================================================================
+volumes: {}

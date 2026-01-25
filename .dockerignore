@@ -1,0 +1,90 @@
+# =============================================================================
+# Docker Ignore File
+# =============================================================================
+# Files and directories to exclude from Docker build context
+# =============================================================================
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDE and editor files
+.idea
+.vscode
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Documentation
+docs/
+*.md
+!README.md
+LICENSE
+
+# Test files
+*_test.go
+**/*_test.go
+**/testdata/
+coverage/
+*.cover
+*.out
+
+# Build artifacts
+bin/
+dist/
+build/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Dependencies (will be downloaded during build)
+vendor/
+node_modules/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Docker files (we're building inside Docker)
+docker-compose*.yml
+Dockerfile*
+.docker/
+
+# Local development
+.local/
+tmp/
+temp/
+*.log
+*.tmp
+
+# Generated files
+*.pb.go
+*_gen.go
+
+# Secrets and credentials
+*.pem
+*.key
+*.crt
+credentials/
+secrets/
+
+# IDE specific
+.project
+.classpath
+.settings/
+
+# OS files
+Thumbs.db
+ehthumbs.db
+
+# Test artifacts
+coverage.html
+profile.cov
+
+# Air (hot reload)
+.air.toml
+air.toml

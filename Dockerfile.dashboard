@@ -1,0 +1,236 @@
+# =============================================================================
+# Dockerfile.dashboard
+# =============================================================================
+# Multi-stage build for the Conductor Dashboard (React/TypeScript)
+#
+# Build: docker build -f Dockerfile.dashboard -t conductor/dashboard .
+# Run:   docker run -p 3000:80 conductor/dashboard
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Stage 1: Dependencies
+# -----------------------------------------------------------------------------
+ARG NODE_VERSION=20
+FROM node:${NODE_VERSION}-alpine AS deps
+
+WORKDIR /app
+
+# Copy package files
+COPY web/package*.json ./
+
+# Install dependencies
+RUN npm ci --ignore-scripts
+
+# -----------------------------------------------------------------------------
+# Stage 2: Build
+# -----------------------------------------------------------------------------
+FROM node:${NODE_VERSION}-alpine AS builder
+
+WORKDIR /app
+
+# Copy dependencies from deps stage
+COPY --from=deps /app/node_modules ./node_modules
+
+# Copy source code
+COPY web/ .
+
+# Build arguments for environment variables
+ARG VITE_API_URL=http://localhost:8080
+ARG VITE_WS_URL=ws://localhost:8080
+ARG VITE_APP_VERSION=dev
+
+# Set environment variables for build
+ENV VITE_API_URL=${VITE_API_URL} \
+    VITE_WS_URL=${VITE_WS_URL} \
+    VITE_APP_VERSION=${VITE_APP_VERSION} \
+    NODE_ENV=production
+
+# Build the application
+RUN npm run build
+
+# -----------------------------------------------------------------------------
+# Stage 3: Production Image
+# -----------------------------------------------------------------------------
+FROM nginx:1.25-alpine AS production
+
+# Install runtime dependencies
+RUN apk add --no-cache \
+    wget \
+    curl \
+    tzdata \
+    && rm -rf /var/cache/apk/*
+
+# Create non-root user
+RUN addgroup -g 1000 conductor && \
+    adduser -u 1000 -G conductor -s /bin/sh -D conductor
+
+# Create necessary directories
+RUN mkdir -p /var/cache/nginx /var/run /var/log/nginx && \
+    chown -R conductor:conductor /var/cache/nginx /var/run /var/log/nginx
+
+# Copy built assets from builder stage
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Copy nginx configuration
+COPY <<'EOF' /etc/nginx/nginx.conf
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log warn;
+pid /var/run/nginx.pid;
+
+events {
+    worker_connections 1024;
+    use epoll;
+    multi_accept on;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+
+    log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log /var/log/nginx/access.log main;
+
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+
+    # Gzip compression
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_types text/plain text/css text/xml application/json application/javascript 
+               application/xml application/xml+rss text/javascript application/wasm;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    server {
+        listen 80;
+        listen [::]:80;
+        server_name _;
+        root /usr/share/nginx/html;
+        index index.html;
+
+        # Health check endpoint
+        location /health {
+            access_log off;
+            return 200 'OK';
+            add_header Content-Type text/plain;
+        }
+
+        # API proxy (optional - can be used if dashboard proxies to backend)
+        location /api/ {
+            # Uncomment and configure if you want nginx to proxy API requests
+            # proxy_pass http://control-plane:8080/;
+            # proxy_http_version 1.1;
+            # proxy_set_header Upgrade $http_upgrade;
+            # proxy_set_header Connection 'upgrade';
+            # proxy_set_header Host $host;
+            # proxy_set_header X-Real-IP $remote_addr;
+            # proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            # proxy_set_header X-Forwarded-Proto $scheme;
+            # proxy_cache_bypass $http_upgrade;
+            return 404;
+        }
+
+        # WebSocket proxy (optional)
+        location /ws {
+            # Uncomment and configure for WebSocket support
+            # proxy_pass http://control-plane:8080/ws;
+            # proxy_http_version 1.1;
+            # proxy_set_header Upgrade $http_upgrade;
+            # proxy_set_header Connection "Upgrade";
+            # proxy_set_header Host $host;
+            # proxy_read_timeout 86400;
+            return 404;
+        }
+
+        # Static assets with caching
+        location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+            expires 1y;
+            add_header Cache-Control "public, immutable";
+            access_log off;
+        }
+
+        # SPA fallback - serve index.html for all routes
+        location / {
+            try_files $uri $uri/ /index.html;
+            
+            # Disable caching for index.html
+            location = /index.html {
+                add_header Cache-Control "no-cache, no-store, must-revalidate";
+                add_header Pragma "no-cache";
+                add_header Expires "0";
+            }
+        }
+
+        # Deny access to hidden files
+        location ~ /\. {
+            deny all;
+            access_log off;
+            log_not_found off;
+        }
+    }
+}
+EOF
+
+# Create runtime config script for environment variable injection
+COPY <<'EOF' /docker-entrypoint.d/40-inject-env.sh
+#!/bin/sh
+set -e
+
+# Replace environment variables in the built JavaScript
+# This allows runtime configuration without rebuilding
+
+CONFIG_FILE="/usr/share/nginx/html/config.js"
+
+cat > "$CONFIG_FILE" << CONFIGEOF
+window.__CONDUCTOR_CONFIG__ = {
+  API_URL: "${VITE_API_URL:-http://localhost:8080}",
+  WS_URL: "${VITE_WS_URL:-ws://localhost:8080}",
+  VERSION: "${VITE_APP_VERSION:-dev}"
+};
+CONFIGEOF
+
+echo "Runtime configuration injected into $CONFIG_FILE"
+EOF
+
+RUN chmod +x /docker-entrypoint.d/40-inject-env.sh
+
+# Set working directory
+WORKDIR /usr/share/nginx/html
+
+# Environment variables
+ENV VITE_API_URL=http://localhost:8080 \
+    VITE_WS_URL=ws://localhost:8080 \
+    VITE_APP_VERSION=dev \
+    TZ=UTC
+
+# Expose port
+EXPOSE 80
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD wget -q --spider http://localhost:80/health || exit 1
+
+# Labels
+LABEL org.opencontainers.image.title="Conductor Dashboard" \
+      org.opencontainers.image.description="Web dashboard for the Conductor test orchestration platform" \
+      org.opencontainers.image.vendor="Conductor" \
+      org.opencontainers.image.source="https://github.com/conductor/conductor" \
+      org.opencontainers.image.licenses="MIT" \
+      com.conductor.service="dashboard" \
+      com.conductor.component="frontend"
+
+# Default command (nginx runs in foreground)
+CMD ["nginx", "-g", "daemon off;"]

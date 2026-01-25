@@ -1,0 +1,127 @@
+# =============================================================================
+# Dockerfile.agent
+# =============================================================================
+# Multi-stage build for the Conductor Agent service
+#
+# Build: docker build -f Dockerfile.agent -t conductor/agent .
+# Run:   docker run -v /var/run/docker.sock:/var/run/docker.sock conductor/agent
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Stage 1: Build
+# -----------------------------------------------------------------------------
+ARG GO_VERSION=1.22
+FROM golang:${GO_VERSION}-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache \
+    git \
+    ca-certificates \
+    tzdata \
+    make \
+    gcc \
+    musl-dev
+
+# Set working directory
+WORKDIR /build
+
+# Copy dependency files first for better caching
+COPY go.mod go.sum ./
+RUN go mod download && go mod verify
+
+# Copy source code
+COPY . .
+
+# Build arguments
+ARG VERSION=dev
+ARG COMMIT_SHA=unknown
+ARG BUILD_TIME=unknown
+
+# Build the binary with optimizations
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -ldflags="-w -s \
+        -X 'main.Version=${VERSION}' \
+        -X 'main.CommitSHA=${COMMIT_SHA}' \
+        -X 'main.BuildTime=${BUILD_TIME}'" \
+    -o /build/bin/agent \
+    ./cmd/agent
+
+# -----------------------------------------------------------------------------
+# Stage 2: Production Image
+# -----------------------------------------------------------------------------
+FROM alpine:3.19 AS production
+
+# Install runtime dependencies including Docker CLI for container execution mode
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    wget \
+    curl \
+    git \
+    docker-cli \
+    docker-cli-compose \
+    bash \
+    jq \
+    && rm -rf /var/cache/apk/*
+
+# Create non-root user for security
+# Note: User needs to be in docker group to access Docker socket
+RUN addgroup -g 1000 conductor && \
+    adduser -u 1000 -G conductor -s /bin/sh -D conductor && \
+    addgroup conductor docker 2>/dev/null || true
+
+# Create necessary directories
+RUN mkdir -p /app /data /workspace /config && \
+    chown -R conductor:conductor /app /data /workspace /config
+
+# Copy timezone data
+COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
+
+# Copy binary from builder
+COPY --from=builder /build/bin/agent /app/agent
+
+# Copy scripts
+COPY --chmod=755 scripts/wait-for-it.sh /app/wait-for-it.sh
+
+# Set working directory
+WORKDIR /app
+
+# Note: We run as root by default because Docker socket access typically requires it
+# In production, consider using rootless Docker or proper group permissions
+USER root
+
+# Environment variables
+ENV CONDUCTOR_ENV=production \
+    AGENT_LOG_LEVEL=info \
+    AGENT_LOG_FORMAT=json \
+    AGENT_WORKSPACE_DIR=/workspace \
+    AGENT_DATA_DIR=/data \
+    AGENT_MAX_CONCURRENT_TESTS=4 \
+    AGENT_DEFAULT_TEST_TIMEOUT=30m \
+    AGENT_HEARTBEAT_INTERVAL=30s \
+    AGENT_DOCKER_ENABLED=true \
+    DOCKER_HOST=unix:///var/run/docker.sock \
+    TZ=UTC
+
+# Volumes
+# /workspace - Test execution workspace (git clones, test runs)
+# /data - Agent local state (SQLite database)
+# /var/run/docker.sock - Docker socket for container execution
+VOLUME ["/workspace", "/data"]
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD wget -q --spider http://localhost:8090/health || exit 1
+
+# Labels
+LABEL org.opencontainers.image.title="Conductor Agent" \
+      org.opencontainers.image.description="Test execution agent for the Conductor test orchestration platform" \
+      org.opencontainers.image.vendor="Conductor" \
+      org.opencontainers.image.source="https://github.com/conductor/conductor" \
+      org.opencontainers.image.licenses="MIT" \
+      com.conductor.service="agent" \
+      com.conductor.component="worker"
+
+# Default command
+ENTRYPOINT ["/app/agent"]
+CMD ["run"]

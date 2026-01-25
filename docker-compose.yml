@@ -1,0 +1,385 @@
+# Conductor Test Orchestration Platform - Development Environment
+# Usage: docker compose up -d
+# Dashboard: http://localhost:3000
+# Control Plane API: http://localhost:8080
+# Control Plane gRPC: localhost:9090
+# MinIO Console: http://localhost:9001
+
+services:
+  # =============================================================================
+  # PostgreSQL - Primary database for test registry, runs, and results
+  # =============================================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: conductor-postgres
+    hostname: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-conductor}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-conductor_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-conductor}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-postgres.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-conductor} -d ${POSTGRES_DB:-conductor}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - conductor-net
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 256M
+    labels:
+      - "com.conductor.service=database"
+      - "com.conductor.component=postgres"
+
+  # =============================================================================
+  # MinIO - S3-compatible object storage for test artifacts
+  # =============================================================================
+  minio:
+    image: minio/minio:RELEASE.2024-01-16T16-07-38Z
+    container_name: conductor-minio
+    hostname: minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-conductor}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-conductor_secret}
+      MINIO_BROWSER_REDIRECT_URL: ${MINIO_BROWSER_REDIRECT_URL:-http://localhost:9001}
+    ports:
+      - "${MINIO_API_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - conductor-net
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+    labels:
+      - "com.conductor.service=storage"
+      - "com.conductor.component=minio"
+
+  # =============================================================================
+  # MinIO Setup - Initialize buckets and policies
+  # =============================================================================
+  minio-setup:
+    image: minio/mc:RELEASE.2024-01-16T16-06-34Z
+    container_name: conductor-minio-setup
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: /bin/sh
+    command: /scripts/init-minio.sh
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-conductor}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-conductor_secret}
+      MINIO_BUCKET: ${MINIO_BUCKET:-conductor-artifacts}
+    volumes:
+      - ./scripts/init-minio.sh:/scripts/init-minio.sh:ro
+    networks:
+      - conductor-net
+    labels:
+      - "com.conductor.service=storage"
+      - "com.conductor.component=minio-setup"
+
+  # =============================================================================
+  # Redis - Caching, pub/sub, and ephemeral state
+  # =============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: conductor-redis
+    hostname: redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - conductor-net
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 300M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
+    labels:
+      - "com.conductor.service=cache"
+      - "com.conductor.component=redis"
+
+  # =============================================================================
+  # Control Plane - Central coordination service
+  # =============================================================================
+  control-plane:
+    build:
+      context: .
+      dockerfile: Dockerfile.control-plane
+      args:
+        GO_VERSION: "1.22"
+    image: conductor/control-plane:${VERSION:-dev}
+    container_name: conductor-control-plane
+    hostname: control-plane
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-setup:
+        condition: service_completed_successfully
+    environment:
+      # Server configuration
+      CONDUCTOR_ENV: ${CONDUCTOR_ENV:-development}
+      CONDUCTOR_LOG_LEVEL: ${LOG_LEVEL:-debug}
+      CONDUCTOR_LOG_FORMAT: ${LOG_FORMAT:-json}
+      
+      # HTTP/gRPC ports
+      CONDUCTOR_HTTP_PORT: "8080"
+      CONDUCTOR_GRPC_PORT: "9090"
+      CONDUCTOR_METRICS_PORT: "8081"
+      
+      # Database
+      DATABASE_URL: postgres://${POSTGRES_USER:-conductor}:${POSTGRES_PASSWORD:-conductor_secret}@postgres:5432/${POSTGRES_DB:-conductor}?sslmode=disable
+      DATABASE_MAX_CONNECTIONS: ${DATABASE_MAX_CONNECTIONS:-25}
+      DATABASE_MAX_IDLE_CONNECTIONS: ${DATABASE_MAX_IDLE_CONNECTIONS:-5}
+      
+      # Object storage
+      ARTIFACT_STORAGE_URL: http://minio:9000
+      ARTIFACT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER:-conductor}
+      ARTIFACT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-conductor_secret}
+      ARTIFACT_STORAGE_BUCKET: ${MINIO_BUCKET:-conductor-artifacts}
+      ARTIFACT_STORAGE_USE_SSL: "false"
+      
+      # Redis
+      REDIS_URL: redis://redis:6379/0
+      REDIS_POOL_SIZE: ${REDIS_POOL_SIZE:-10}
+      
+      # Security
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-24h}
+      AGENT_TOKEN_SECRET: ${AGENT_TOKEN_SECRET:-dev-agent-secret-change-in-production}
+      
+      # Git providers (optional for dev)
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
+      
+      # OpenTelemetry
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_SERVICE_NAME: conductor-control-plane
+      
+      # Scheduler settings
+      SCHEDULER_POLL_INTERVAL: ${SCHEDULER_POLL_INTERVAL:-5s}
+      SCHEDULER_MAX_CONCURRENT_RUNS: ${SCHEDULER_MAX_CONCURRENT_RUNS:-100}
+      
+      # Agent management
+      AGENT_HEARTBEAT_TIMEOUT: ${AGENT_HEARTBEAT_TIMEOUT:-90s}
+      AGENT_DRAIN_TIMEOUT: ${AGENT_DRAIN_TIMEOUT:-5m}
+    ports:
+      - "${CONTROL_PLANE_HTTP_PORT:-8080}:8080"
+      - "${CONTROL_PLANE_GRPC_PORT:-9090}:9090"
+      - "${CONTROL_PLANE_METRICS_PORT:-8081}:8081"
+    healthcheck:
+      test: ["CMD", "/app/control-plane", "health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - conductor-net
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 1G
+        reservations:
+          cpus: "0.5"
+          memory: 256M
+    labels:
+      - "com.conductor.service=control-plane"
+      - "com.conductor.component=api"
+
+  # =============================================================================
+  # Agent - Test execution worker (can be scaled)
+  # =============================================================================
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+      args:
+        GO_VERSION: "1.22"
+    image: conductor/agent:${VERSION:-dev}
+    hostname: "agent-{{.Task.Slot}}"
+    restart: unless-stopped
+    depends_on:
+      control-plane:
+        condition: service_healthy
+    environment:
+      # Agent identification
+      AGENT_NAME: ${AGENT_NAME:-agent-${HOSTNAME:-local}}
+      AGENT_LABELS: ${AGENT_LABELS:-env=dev,platform=linux}
+      AGENT_TOKEN: ${AGENT_TOKEN:-dev-agent-token}
+      
+      # Control plane connection
+      CONTROL_PLANE_URL: ${CONTROL_PLANE_URL:-control-plane:9090}
+      CONTROL_PLANE_USE_TLS: "false"
+      
+      # Execution settings
+      AGENT_MAX_CONCURRENT_TESTS: ${AGENT_MAX_CONCURRENT_TESTS:-4}
+      AGENT_DEFAULT_TEST_TIMEOUT: ${AGENT_DEFAULT_TEST_TIMEOUT:-30m}
+      AGENT_WORKSPACE_DIR: /workspace
+      
+      # Heartbeat
+      AGENT_HEARTBEAT_INTERVAL: ${AGENT_HEARTBEAT_INTERVAL:-30s}
+      
+      # Logging
+      AGENT_LOG_LEVEL: ${LOG_LEVEL:-debug}
+      AGENT_LOG_FORMAT: ${LOG_FORMAT:-json}
+      
+      # Docker execution mode
+      AGENT_DOCKER_ENABLED: "true"
+      DOCKER_HOST: unix:///var/run/docker.sock
+      
+      # OpenTelemetry
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_SERVICE_NAME: conductor-agent
+    volumes:
+      # Docker socket for container execution mode
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Workspace for test execution
+      - agent_workspace:/workspace
+      # Agent local database
+      - agent_data:/data
+    healthcheck:
+      test: ["CMD", "/app/agent", "health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - conductor-net
+    deploy:
+      mode: replicated
+      replicas: ${AGENT_REPLICAS:-1}
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+    labels:
+      - "com.conductor.service=agent"
+      - "com.conductor.component=worker"
+
+  # =============================================================================
+  # Dashboard - Web UI (optional, comment out if not needed)
+  # =============================================================================
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+      args:
+        NODE_VERSION: "20"
+    image: conductor/dashboard:${VERSION:-dev}
+    container_name: conductor-dashboard
+    hostname: dashboard
+    restart: unless-stopped
+    depends_on:
+      control-plane:
+        condition: service_healthy
+    environment:
+      # API endpoint for the dashboard
+      VITE_API_URL: ${DASHBOARD_API_URL:-http://localhost:8080}
+      VITE_WS_URL: ${DASHBOARD_WS_URL:-ws://localhost:8080}
+    ports:
+      - "${DASHBOARD_PORT:-3000}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - conductor-net
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
+        reservations:
+          cpus: "0.1"
+          memory: 32M
+    labels:
+      - "com.conductor.service=dashboard"
+      - "com.conductor.component=frontend"
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  conductor-net:
+    name: conductor-net
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  postgres_data:
+    name: conductor-postgres-data
+    labels:
+      - "com.conductor.volume=database"
+  minio_data:
+    name: conductor-minio-data
+    labels:
+      - "com.conductor.volume=artifacts"
+  redis_data:
+    name: conductor-redis-data
+    labels:
+      - "com.conductor.volume=cache"
+  agent_workspace:
+    name: conductor-agent-workspace
+    labels:
+      - "com.conductor.volume=workspace"
+  agent_data:
+    name: conductor-agent-data
+    labels:
+      - "com.conductor.volume=agent-state"
