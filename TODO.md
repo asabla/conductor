@@ -104,7 +104,7 @@
 - [x] PR comment posting
 - [x] Wire webhook handler to HTTP server
 - [x] Webhook handler unit tests (13 tests)
-- [ ] GitHub App authentication (JWT-based)
+- [x] GitHub App authentication (JWT-based)
 
 ### Priority 5: Notifications
 - [x] Slack integration
@@ -118,4 +118,4 @@
 - [ ] Test sharding across agents
 - [ ] Flaky test detection and quarantine
 - [x] Test analytics dashboards
-- [ ] Secret management integration (Vault, etc.)
+- [x] Secret management integration (Vault, etc.)

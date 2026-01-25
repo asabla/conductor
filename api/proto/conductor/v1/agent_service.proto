@@ -149,7 +149,7 @@ message AssignWork {
   repeated TestToRun tests = 3;
   // Environment variables to set during execution.
   map<string, string> environment = 4;
-  // Secrets to inject (will be decrypted by agent).
+  // Secret references to resolve before execution.
   repeated Secret secrets = 5;
   // Maximum duration for the entire run.
   Duration timeout = 6;
@@ -187,14 +187,26 @@ message TestToRun {
   int32 retry_count = 8;
 }
 
-// Secret represents an encrypted secret to be injected into the test environment.
+// SecretProvider identifies the backend used to resolve secrets.
+enum SecretProvider {
+  // Default value, should not be used.
+  SECRET_PROVIDER_UNSPECIFIED = 0;
+  // Resolve secrets from HashiCorp Vault.
+  SECRET_PROVIDER_VAULT = 1;
+}
+
+// Secret represents a secret reference to be resolved by the agent.
 message Secret {
   // Name of the environment variable to set.
   string name = 1;
-  // Encrypted secret value (agent decrypts using its key).
-  bytes encrypted_value = 2;
-  // Key ID used for encryption.
-  string key_id = 3;
+  // Provider that stores the secret (defaults to VAULT).
+  SecretProvider provider = 2;
+  // Provider-specific secret path (Vault KV v2 path).
+  string path = 3;
+  // Key within the secret data map to read.
+  string key = 4;
+  // Optional version for versioned secrets (Vault KV v2).
+  int32 version = 5;
 }
 
 // CancelWork requests cancellation of an in-progress test run.

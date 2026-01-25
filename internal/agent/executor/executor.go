@@ -46,9 +46,6 @@ type ExecutionRequest struct {
 	// Environment variables to set.
 	Environment map[string]string
 
-	// Secrets to inject.
-	Secrets []*conductorv1.Secret
-
 	// SetupCommands to run before tests.
 	SetupCommands []string
 

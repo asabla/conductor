@@ -106,6 +106,24 @@ type Config struct {
 	// StorageUseSSL enables SSL for storage connections (default: true).
 	StorageUseSSL bool
 
+	// SecretsProvider enables secret resolution (vault).
+	SecretsProvider string
+
+	// VaultAddress is the Vault API address for secret resolution.
+	VaultAddress string
+
+	// VaultToken is the Vault token for secret resolution.
+	VaultToken string
+
+	// VaultNamespace is the optional Vault namespace header.
+	VaultNamespace string
+
+	// VaultMount is the KV mount path (default: secret).
+	VaultMount string
+
+	// VaultTimeout is the HTTP timeout for Vault requests (default: 10s).
+	VaultTimeout time.Duration
+
 	// ResourceCheckInterval is how often to check system resources (default: 10s).
 	ResourceCheckInterval time.Duration
 
@@ -158,10 +176,20 @@ func Load() (*Config, error) {
 		StorageBucket:         getEnv("CONDUCTOR_AGENT_STORAGE_BUCKET", ""),
 		StorageRegion:         getEnv("CONDUCTOR_AGENT_STORAGE_REGION", "us-east-1"),
 		StorageUseSSL:         getEnvBool("CONDUCTOR_AGENT_STORAGE_USE_SSL", true),
+		SecretsProvider:       getEnv("CONDUCTOR_AGENT_SECRETS_PROVIDER", ""),
+		VaultAddress:          getEnv("CONDUCTOR_AGENT_SECRETS_VAULT_ADDR", ""),
+		VaultToken:            getEnv("CONDUCTOR_AGENT_SECRETS_VAULT_TOKEN", ""),
+		VaultNamespace:        getEnv("CONDUCTOR_AGENT_SECRETS_VAULT_NAMESPACE", ""),
+		VaultMount:            getEnv("CONDUCTOR_AGENT_SECRETS_VAULT_MOUNT", "secret"),
+		VaultTimeout:          getEnvDuration("CONDUCTOR_AGENT_SECRETS_VAULT_TIMEOUT", 10*time.Second),
 		ResourceCheckInterval: getEnvDuration("CONDUCTOR_AGENT_RESOURCE_CHECK_INTERVAL", 10*time.Second),
 		CPUThreshold:          getEnvFloat64("CONDUCTOR_AGENT_CPU_THRESHOLD", 90.0),
 		MemoryThreshold:       getEnvFloat64("CONDUCTOR_AGENT_MEMORY_THRESHOLD", 90.0),
 		DiskThreshold:         getEnvFloat64("CONDUCTOR_AGENT_DISK_THRESHOLD", 90.0),
+	}
+
+	if cfg.SecretsProvider == "" && cfg.VaultAddress != "" {
+		cfg.SecretsProvider = "vault"
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -236,6 +264,19 @@ func (c *Config) Validate() error {
 		}
 		if c.TLSKeyFile == "" {
 			errs = append(errs, errors.New("CONDUCTOR_AGENT_TLS_KEY_FILE is required when TLS is enabled"))
+		}
+	}
+
+	// Validate secrets settings
+	if c.SecretsProvider != "" && c.SecretsProvider != "vault" {
+		errs = append(errs, errors.New("CONDUCTOR_AGENT_SECRETS_PROVIDER must be empty or 'vault'"))
+	}
+	if c.SecretsProvider == "vault" {
+		if c.VaultAddress == "" {
+			errs = append(errs, errors.New("CONDUCTOR_AGENT_SECRETS_VAULT_ADDR is required when secrets provider is vault"))
+		}
+		if c.VaultToken == "" {
+			errs = append(errs, errors.New("CONDUCTOR_AGENT_SECRETS_VAULT_TOKEN is required when secrets provider is vault"))
 		}
 	}
 

@@ -30,12 +30,7 @@ func TestSubprocessExecutorExecuteSuccess(t *testing.T) {
 		WorkDir: workDir,
 		Environment: map[string]string{
 			"CUSTOM": "value",
-		},
-		Secrets: []*conductorv1.Secret{
-			{
-				Name:           "SECRET",
-				EncryptedValue: []byte("s3cret"),
-			},
+			"SECRET": "s3cret",
 		},
 		Tests: []*conductorv1.TestToRun{
 			{

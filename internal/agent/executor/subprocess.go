@@ -354,13 +354,6 @@ func (e *SubprocessExecutor) setupEnvironment(req *ExecutionRequest) []string {
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
 	}
 
-	// Add decrypted secrets
-	for _, secret := range req.Secrets {
-		// In production, secrets would be decrypted here
-		// For now, we treat encrypted_value as plaintext for development
-		env = append(env, fmt.Sprintf("%s=%s", secret.Name, string(secret.EncryptedValue)))
-	}
-
 	return env
 }
 

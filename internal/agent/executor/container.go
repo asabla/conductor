@@ -216,16 +216,12 @@ func (e *ContainerExecutor) pullImage(ctx context.Context, imageName string) err
 // createContainer creates a Docker container for test execution.
 func (e *ContainerExecutor) createContainer(ctx context.Context, req *ExecutionRequest, imageName string) (string, error) {
 	// Build environment variables
-	env := make([]string, 0, len(req.Environment)+len(req.Secrets)+2)
+	env := make([]string, 0, len(req.Environment)+2)
 	env = append(env, fmt.Sprintf("CONDUCTOR_RUN_ID=%s", req.RunID))
 	env = append(env, "CONDUCTOR_WORKSPACE=/workspace")
 
 	for k, v := range req.Environment {
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
-	}
-
-	for _, secret := range req.Secrets {
-		env = append(env, fmt.Sprintf("%s=%s", secret.Name, string(secret.EncryptedValue)))
 	}
 
 	// Determine working directory in container

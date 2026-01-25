@@ -14,6 +14,7 @@ import (
 	conductorv1 "github.com/conductor/conductor/api/gen/conductor/v1"
 	"github.com/conductor/conductor/internal/agent/executor"
 	"github.com/conductor/conductor/internal/agent/repo"
+	"github.com/conductor/conductor/internal/secrets"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 )
@@ -31,6 +32,7 @@ type Agent struct {
 	reporter *Reporter
 	repoMgr  *repo.Manager
 	monitor  *Monitor
+	secrets  secrets.Store
 
 	// Executors for different execution types
 	subprocessExecutor executor.Executor
@@ -90,6 +92,21 @@ func New(cfg *Config) (*Agent, error) {
 	// Create reporter
 	reporter := NewReporter(client, logger)
 
+	// Create secrets store if configured
+	var secretsStore secrets.Store
+	if cfg.SecretsProvider == "vault" {
+		secretsStore, err = secrets.NewVaultStore(secrets.VaultConfig{
+			Address:   cfg.VaultAddress,
+			Token:     cfg.VaultToken,
+			Namespace: cfg.VaultNamespace,
+			Mount:     cfg.VaultMount,
+			Timeout:   cfg.VaultTimeout,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to configure vault secrets: %w", err)
+		}
+	}
+
 	// Create subprocess executor
 	subprocessExec := executor.NewSubprocessExecutor(cfg.WorkspaceDir, logger)
 
@@ -111,6 +128,7 @@ func New(cfg *Config) (*Agent, error) {
 		reporter:           reporter,
 		repoMgr:            repoMgr,
 		monitor:            monitor,
+		secrets:            secretsStore,
 		subprocessExecutor: subprocessExec,
 		containerExecutor:  containerExec,
 		activeRuns:         make(map[string]*activeRun),
@@ -543,14 +561,30 @@ func (a *Agent) processWork(ctx context.Context, work *conductorv1.AssignWork, l
 	// Report progress
 	a.reporter.ReportProgress(ctx, runID, "setup", "Repository cloned", 10, 0, len(work.Tests))
 
+	resolvedEnv := make(map[string]string, len(work.Environment))
+	for key, value := range work.Environment {
+		resolvedEnv[key] = value
+	}
+
+	if len(work.Secrets) > 0 {
+		secretValues, err := a.resolveSecrets(runCtx, work.Secrets)
+		if err != nil {
+			logger.Error().Err(err).Msg("Failed to resolve secrets")
+			a.reporter.ReportComplete(ctx, runID, conductorv1.RunStatus_RUN_STATUS_ERROR, err.Error())
+			return
+		}
+		for key, value := range secretValues {
+			resolvedEnv[key] = value
+		}
+	}
+
 	// Prepare execution request
 	execReq := &executor.ExecutionRequest{
 		RunID:            runID,
 		WorkDir:          repoPath,
 		WorkingDirectory: work.WorkingDirectory,
 		Tests:            work.Tests,
-		Environment:      work.Environment,
-		Secrets:          work.Secrets,
+		Environment:      resolvedEnv,
 		SetupCommands:    work.SetupCommands,
 		TeardownCommands: work.TeardownCommands,
 		ContainerImage:   work.ContainerImage,
@@ -636,6 +670,41 @@ func (a *Agent) selectExecutor(execType conductorv1.ExecutionType) executor.Exec
 	default:
 		return a.subprocessExecutor
 	}
+}
+
+func (a *Agent) resolveSecrets(ctx context.Context, refs []*conductorv1.Secret) (map[string]string, error) {
+	if a.secrets == nil {
+		return nil, errors.New("secrets provider is not configured")
+	}
+
+	values := make(map[string]string, len(refs))
+	for _, ref := range refs {
+		if ref == nil {
+			continue
+		}
+
+		provider := ref.Provider.String()
+		if ref.Provider == conductorv1.SecretProvider_SECRET_PROVIDER_UNSPECIFIED {
+			provider = "vault"
+		}
+		if provider != "vault" {
+			return nil, fmt.Errorf("unsupported secret provider: %s", provider)
+		}
+
+		value, err := a.secrets.Resolve(ctx, secrets.Reference{
+			Name:     ref.Name,
+			Provider: secrets.ProviderVault,
+			Path:     ref.Path,
+			Key:      ref.Key,
+			Version:  int(ref.Version),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("resolve secret %s: %w", ref.Name, err)
+		}
+		values[ref.Name] = value
+	}
+
+	return values, nil
 }
 
 // collectArtifacts collects artifact paths from the workspace.
