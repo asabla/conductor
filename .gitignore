@@ -13,8 +13,8 @@ Thumbs.db
 
 # Go binaries
 bin/
-agent
-control-plane
+/agent
+/control-plane
 *.exe
 *.exe~
 *.dll
