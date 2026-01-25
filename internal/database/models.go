@@ -116,6 +116,10 @@ type TestRun struct {
 	PassedTests  int          `json:"passed_tests" db:"passed_tests"`
 	FailedTests  int          `json:"failed_tests" db:"failed_tests"`
 	SkippedTests int          `json:"skipped_tests" db:"skipped_tests"`
+	ShardCount   int          `json:"shard_count" db:"shard_count"`
+	ShardsDone   int          `json:"shards_completed" db:"shards_completed"`
+	ShardsFailed int          `json:"shards_failed" db:"shards_failed"`
+	MaxParallel  int          `json:"max_parallel_tests" db:"max_parallel_tests"`
 	DurationMs   *int64       `json:"duration_ms,omitempty" db:"duration_ms"`
 	ErrorMessage *string      `json:"error_message,omitempty" db:"error_message"`
 }
@@ -144,6 +148,7 @@ const (
 type TestResult struct {
 	ID               uuid.UUID    `json:"id" db:"id"`
 	RunID            uuid.UUID    `json:"run_id" db:"run_id"`
+	ShardID          *uuid.UUID   `json:"shard_id,omitempty" db:"shard_id"`
 	TestDefinitionID *uuid.UUID   `json:"test_definition_id,omitempty" db:"test_definition_id"`
 	TestName         string       `json:"test_name" db:"test_name"`
 	SuiteName        *string      `json:"suite_name,omitempty" db:"suite_name"`
@@ -155,6 +160,36 @@ type TestResult struct {
 	Stderr           *string      `json:"stderr,omitempty" db:"stderr"`
 	RetryCount       int          `json:"retry_count" db:"retry_count"`
 	CreatedAt        time.Time    `json:"created_at" db:"created_at"`
+}
+
+// ShardStatus represents the status of a run shard.
+type ShardStatus string
+
+const (
+	ShardStatusPending   ShardStatus = "pending"
+	ShardStatusRunning   ShardStatus = "running"
+	ShardStatusPassed    ShardStatus = "passed"
+	ShardStatusFailed    ShardStatus = "failed"
+	ShardStatusError     ShardStatus = "error"
+	ShardStatusCancelled ShardStatus = "cancelled"
+)
+
+// RunShard represents a shard of a test run.
+type RunShard struct {
+	ID           uuid.UUID   `json:"id" db:"id"`
+	RunID        uuid.UUID   `json:"run_id" db:"run_id"`
+	ShardIndex   int         `json:"shard_index" db:"shard_index"`
+	ShardCount   int         `json:"shard_count" db:"shard_count"`
+	Status       ShardStatus `json:"status" db:"status"`
+	AgentID      *uuid.UUID  `json:"agent_id,omitempty" db:"agent_id"`
+	TotalTests   int         `json:"total_tests" db:"total_tests"`
+	PassedTests  int         `json:"passed_tests" db:"passed_tests"`
+	FailedTests  int         `json:"failed_tests" db:"failed_tests"`
+	SkippedTests int         `json:"skipped_tests" db:"skipped_tests"`
+	ErrorMessage *string     `json:"error_message,omitempty" db:"error_message"`
+	StartedAt    *time.Time  `json:"started_at,omitempty" db:"started_at"`
+	FinishedAt   *time.Time  `json:"finished_at,omitempty" db:"finished_at"`
+	CreatedAt    time.Time   `json:"created_at" db:"created_at"`
 }
 
 // Artifact represents a test artifact stored in S3/MinIO.

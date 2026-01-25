@@ -125,6 +125,8 @@ message Heartbeat {
 message WorkAccepted {
   // ID of the accepted run.
   string run_id = 1;
+  // ID of the accepted shard (optional).
+  string shard_id = 3;
   // Estimated start time.
   google.protobuf.Timestamp estimated_start = 2;
 }
@@ -133,6 +135,8 @@ message WorkAccepted {
 message WorkRejected {
   // ID of the rejected run.
   string run_id = 1;
+  // ID of the rejected shard (optional).
+  string shard_id = 4;
   // Reason for rejection.
   string reason = 2;
   // Whether this rejection is temporary (agent may accept later).
@@ -165,6 +169,14 @@ message AssignWork {
   repeated string teardown_commands = 11;
   // Priority for scheduling (higher = more urgent).
   int32 priority = 12;
+  // Unique identifier for this shard (optional).
+  string shard_id = 13;
+  // Shard index (zero-based).
+  int32 shard_index = 14;
+  // Total number of shards.
+  int32 shard_count = 15;
+  // Max parallel tests within this shard (0 = default).
+  int32 max_parallel_tests = 16;
 }
 
 // TestToRun specifies a test or test suite to execute.
@@ -324,6 +336,8 @@ message RunComplete {
   Duration duration = 4;
   // Timestamp when run completed.
   google.protobuf.Timestamp timestamp = 5;
+  // Shard ID if this completion is for a shard.
+  string shard_id = 6;
 }
 
 // RunSummary provides aggregate statistics for a test run.

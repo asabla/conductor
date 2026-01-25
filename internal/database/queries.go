@@ -230,6 +230,7 @@ const (
 		SELECT id, service_id, agent_id, status, git_ref, git_sha, trigger_type,
 			   triggered_by, priority, created_at, started_at, finished_at,
 			   total_tests, passed_tests, failed_tests, skipped_tests,
+			   shard_count, shards_completed, shards_failed, max_parallel_tests,
 			   duration_ms, error_message
 		FROM test_runs
 		WHERE id = $1`
@@ -267,6 +268,7 @@ const (
 		SELECT id, service_id, agent_id, status, git_ref, git_sha, trigger_type,
 			   triggered_by, priority, created_at, started_at, finished_at,
 			   total_tests, passed_tests, failed_tests, skipped_tests,
+			   shard_count, shards_completed, shards_failed, max_parallel_tests,
 			   duration_ms, error_message
 		FROM test_runs
 		ORDER BY created_at DESC
@@ -277,6 +279,7 @@ const (
 		SELECT id, service_id, agent_id, status, git_ref, git_sha, trigger_type,
 			   triggered_by, priority, created_at, started_at, finished_at,
 			   total_tests, passed_tests, failed_tests, skipped_tests,
+			   shard_count, shards_completed, shards_failed, max_parallel_tests,
 			   duration_ms, error_message
 		FROM test_runs
 		WHERE service_id = $1
@@ -288,6 +291,7 @@ const (
 		SELECT id, service_id, agent_id, status, git_ref, git_sha, trigger_type,
 			   triggered_by, priority, created_at, started_at, finished_at,
 			   total_tests, passed_tests, failed_tests, skipped_tests,
+			   shard_count, shards_completed, shards_failed, max_parallel_tests,
 			   duration_ms, error_message
 		FROM test_runs
 		WHERE status = $1
@@ -299,6 +303,7 @@ const (
 		SELECT id, service_id, agent_id, status, git_ref, git_sha, trigger_type,
 			   triggered_by, priority, created_at, started_at, finished_at,
 			   total_tests, passed_tests, failed_tests, skipped_tests,
+			   shard_count, shards_completed, shards_failed, max_parallel_tests,
 			   duration_ms, error_message
 		FROM test_runs
 		WHERE status = 'pending'
@@ -310,6 +315,7 @@ const (
 		SELECT id, service_id, agent_id, status, git_ref, git_sha, trigger_type,
 			   triggered_by, priority, created_at, started_at, finished_at,
 			   total_tests, passed_tests, failed_tests, skipped_tests,
+			   shard_count, shards_completed, shards_failed, max_parallel_tests,
 			   duration_ms, error_message
 		FROM test_runs
 		WHERE status = 'running'
@@ -320,6 +326,7 @@ const (
 		SELECT id, service_id, agent_id, status, git_ref, git_sha, trigger_type,
 			   triggered_by, priority, created_at, started_at, finished_at,
 			   total_tests, passed_tests, failed_tests, skipped_tests,
+			   shard_count, shards_completed, shards_failed, max_parallel_tests,
 			   duration_ms, error_message
 		FROM test_runs
 		WHERE service_id = $1 AND status = $2
@@ -331,6 +338,7 @@ const (
 		SELECT id, service_id, agent_id, status, git_ref, git_sha, trigger_type,
 			   triggered_by, priority, created_at, started_at, finished_at,
 			   total_tests, passed_tests, failed_tests, skipped_tests,
+			   shard_count, shards_completed, shards_failed, max_parallel_tests,
 			   duration_ms, error_message
 		FROM test_runs
 		WHERE created_at >= $1 AND created_at < $2
@@ -352,15 +360,15 @@ const (
 	// ResultInsert inserts a new test result.
 	ResultInsert = `
 		INSERT INTO test_results (
-			run_id, test_definition_id, test_name, suite_name, status,
+			run_id, shard_id, test_definition_id, test_name, suite_name, status,
 			duration_ms, error_message, stack_trace, stdout, stderr, retry_count
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
 		) RETURNING id, created_at`
 
 	// ResultGetByID retrieves a test result by ID.
 	ResultGetByID = `
-		SELECT id, run_id, test_definition_id, test_name, suite_name, status,
+		SELECT id, run_id, shard_id, test_definition_id, test_name, suite_name, status,
 			   duration_ms, error_message, stack_trace, stdout, stderr,
 			   retry_count, created_at
 		FROM test_results
@@ -368,7 +376,7 @@ const (
 
 	// ResultListByRun lists results for a test run.
 	ResultListByRun = `
-		SELECT id, run_id, test_definition_id, test_name, suite_name, status,
+		SELECT id, run_id, shard_id, test_definition_id, test_name, suite_name, status,
 			   duration_ms, error_message, stack_trace, stdout, stderr,
 			   retry_count, created_at
 		FROM test_results
@@ -377,7 +385,7 @@ const (
 
 	// ResultListByRunAndStatus lists results for a run with a specific status.
 	ResultListByRunAndStatus = `
-		SELECT id, run_id, test_definition_id, test_name, suite_name, status,
+		SELECT id, run_id, shard_id, test_definition_id, test_name, suite_name, status,
 			   duration_ms, error_message, stack_trace, stdout, stderr,
 			   retry_count, created_at
 		FROM test_results
@@ -393,6 +401,57 @@ const (
 
 	// ResultDelete deletes results for a run.
 	ResultDelete = `DELETE FROM test_results WHERE run_id = $1`
+)
+
+// Run shard queries
+const (
+	// RunShardInsert inserts a new run shard.
+	RunShardInsert = `
+		INSERT INTO run_shards (
+			run_id, shard_index, shard_count, status, total_tests
+		) VALUES (
+			$1, $2, $3, $4, $5
+		) RETURNING id, created_at`
+
+	// RunShardGetByID retrieves a shard by ID.
+	RunShardGetByID = `
+		SELECT id, run_id, shard_index, shard_count, status, agent_id,
+			   total_tests, passed_tests, failed_tests, skipped_tests,
+			   error_message, started_at, finished_at, created_at
+		FROM run_shards
+		WHERE id = $1`
+
+	// RunShardListByRun lists shards for a run.
+	RunShardListByRun = `
+		SELECT id, run_id, shard_index, shard_count, status, agent_id,
+			   total_tests, passed_tests, failed_tests, skipped_tests,
+			   error_message, started_at, finished_at, created_at
+		FROM run_shards
+		WHERE run_id = $1
+		ORDER BY shard_index ASC`
+
+	// RunShardUpdateStatus updates shard status.
+	RunShardUpdateStatus = `
+		UPDATE run_shards
+		SET status = $2
+		WHERE id = $1`
+
+	// RunShardStart marks a shard as started.
+	RunShardStart = `
+		UPDATE run_shards
+		SET status = 'running', agent_id = $2, started_at = NOW()
+		WHERE id = $1`
+
+	// RunShardFinish marks a shard as finished.
+	RunShardFinish = `
+		UPDATE run_shards
+		SET status = $2, finished_at = NOW(),
+			total_tests = $3, passed_tests = $4, failed_tests = $5, skipped_tests = $6,
+			error_message = $7
+		WHERE id = $1`
+
+	// RunShardDeleteByRun deletes shards for a run.
+	RunShardDeleteByRun = `DELETE FROM run_shards WHERE run_id = $1`
 )
 
 // Artifact queries

@@ -57,6 +57,10 @@ func (r *runRepo) Get(ctx context.Context, id uuid.UUID) (*TestRun, error) {
 		&run.PassedTests,
 		&run.FailedTests,
 		&run.SkippedTests,
+		&run.ShardCount,
+		&run.ShardsDone,
+		&run.ShardsFailed,
+		&run.MaxParallel,
 		&run.DurationMs,
 		&run.ErrorMessage,
 	)
@@ -278,6 +282,10 @@ func scanTestRuns(rows pgx.Rows) ([]TestRun, error) {
 			&run.PassedTests,
 			&run.FailedTests,
 			&run.SkippedTests,
+			&run.ShardCount,
+			&run.ShardsDone,
+			&run.ShardsFailed,
+			&run.MaxParallel,
 			&run.DurationMs,
 			&run.ErrorMessage,
 		)

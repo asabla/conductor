@@ -200,6 +200,30 @@ type ArtifactRepository interface {
 	DeleteByRun(ctx context.Context, runID uuid.UUID) error
 }
 
+// RunShardRepository defines operations for run shard data.
+type RunShardRepository interface {
+	// Create creates a new shard record.
+	Create(ctx context.Context, shard *RunShard) error
+
+	// Get retrieves a shard by ID.
+	Get(ctx context.Context, id uuid.UUID) (*RunShard, error)
+
+	// ListByRun lists shards for a run.
+	ListByRun(ctx context.Context, runID uuid.UUID) ([]RunShard, error)
+
+	// UpdateStatus updates a shard status.
+	UpdateStatus(ctx context.Context, id uuid.UUID, status ShardStatus) error
+
+	// Start marks a shard as started.
+	Start(ctx context.Context, id uuid.UUID, agentID uuid.UUID) error
+
+	// Finish marks a shard as finished with counts.
+	Finish(ctx context.Context, id uuid.UUID, status ShardStatus, results RunResults) error
+
+	// DeleteByRun deletes shard records for a run.
+	DeleteByRun(ctx context.Context, runID uuid.UUID) error
+}
+
 // NotificationRepository defines the interface for notification data operations.
 type NotificationRepository interface {
 	// CreateChannel creates a new notification channel.
@@ -302,6 +326,7 @@ type Repositories struct {
 	TestDefinitions TestDefinitionRepository
 	Agents          AgentRepository
 	Runs            TestRunRepository
+	RunShards       RunShardRepository
 	Results         ResultRepository
 	Artifacts       ArtifactRepository
 	Notifications   NotificationRepository
@@ -316,6 +341,7 @@ func NewRepositories(db *DB) *Repositories {
 		TestDefinitions: NewTestDefinitionRepo(db),
 		Agents:          NewAgentRepo(db),
 		Runs:            NewRunRepo(db),
+		RunShards:       NewRunShardRepo(db),
 		Results:         NewResultRepo(db),
 		Artifacts:       NewArtifactRepo(db),
 		Notifications:   NewNotificationRepo(db),

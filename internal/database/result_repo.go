@@ -23,6 +23,7 @@ func NewResultRepo(db *DB) ResultRepository {
 func (r *resultRepo) Create(ctx context.Context, result *TestResult) error {
 	err := r.db.pool.QueryRow(ctx, ResultInsert,
 		result.RunID,
+		result.ShardID,
 		result.TestDefinitionID,
 		result.TestName,
 		result.SuiteName,
@@ -55,6 +56,7 @@ func (r *resultRepo) BatchCreate(ctx context.Context, results []TestResult) erro
 			result := &results[i]
 			batch.Queue(ResultInsert,
 				result.RunID,
+				result.ShardID,
 				result.TestDefinitionID,
 				result.TestName,
 				result.SuiteName,
@@ -89,6 +91,7 @@ func (r *resultRepo) Get(ctx context.Context, id uuid.UUID) (*TestResult, error)
 	err := r.db.pool.QueryRow(ctx, ResultGetByID, id).Scan(
 		&result.ID,
 		&result.RunID,
+		&result.ShardID,
 		&result.TestDefinitionID,
 		&result.TestName,
 		&result.SuiteName,
@@ -174,6 +177,7 @@ func scanTestResults(rows pgx.Rows) ([]TestResult, error) {
 		err := rows.Scan(
 			&result.ID,
 			&result.RunID,
+			&result.ShardID,
 			&result.TestDefinitionID,
 			&result.TestName,
 			&result.SuiteName,
