@@ -82,7 +82,8 @@ go build -o bin/agent ./cmd/agent
 go build -o bin/conductor-ctl ./cmd/conductor-ctl
 
 # Run control plane
-export DATABASE_URL="postgres://conductor:conductor_secret@localhost:5432/conductor?sslmode=disable"
+export CONDUCTOR_DATABASE_URL="postgres://conductor:conductor_secret@localhost:5432/conductor?sslmode=disable"
+export CONDUCTOR_STORAGE_ENDPOINT="http://localhost:9000"
 export CONDUCTOR_STORAGE_BUCKET="conductor-artifacts"
 export CONDUCTOR_STORAGE_ACCESS_KEY_ID="conductor"
 export CONDUCTOR_STORAGE_SECRET_ACCESS_KEY="conductor_secret"
@@ -139,6 +140,7 @@ conductor-ctl runs create --service my-service --branch main
 | `CONDUCTOR_STORAGE_ENDPOINT` | S3/MinIO endpoint | Required |
 | `CONDUCTOR_STORAGE_BUCKET` | Artifact storage bucket | Required |
 | `CONDUCTOR_AUTH_JWT_SECRET` | JWT signing secret (32+ chars) | Required |
+| `CONDUCTOR_NOTIFICATIONS_EMAIL_SMTP_HOST` | SMTP host for email notifications | Optional |
 | `CONDUCTOR_GIT_TOKEN` | GitHub/GitLab personal access token | Optional |
 | `CONDUCTOR_GIT_WEBHOOK_SECRET` | Webhook signature secret | Optional |
 

@@ -67,8 +67,8 @@
 
 ### Priority 1: Unit Tests
 - [x] Agent config tests
-- [ ] Agent executor tests (subprocess, container)
-- [ ] Repository tests (with testcontainers)
+- [x] Agent executor tests (subprocess, container)
+- [x] Repository tests (with testcontainers)
 - [x] Agent manager tests
 - [x] Wire adapter tests
 
@@ -107,9 +107,9 @@
 - [ ] GitHub App authentication (JWT-based)
 
 ### Priority 5: Notifications
-- [ ] Slack integration
-- [ ] Email integration
-- [ ] Notification rule engine
+- [x] Slack integration
+- [x] Email integration
+- [x] Notification rule engine
 
 ### Future Enhancements
 - [x] GitLab support
@@ -117,5 +117,5 @@
 - [ ] Test parallelization within runs
 - [ ] Test sharding across agents
 - [ ] Flaky test detection and quarantine
-- [ ] Test analytics dashboards
+- [x] Test analytics dashboards
 - [ ] Secret management integration (Vault, etc.)
