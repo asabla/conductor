@@ -1,0 +1,102 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: conductor
+  namespace: conductor
+  labels:
+    app.kubernetes.io/name: conductor
+    app.kubernetes.io/part-of: conductor
+  annotations:
+    # NGINX Ingress Controller annotations
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # WebSocket support
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$request_uri"
+    # Rate limiting
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    nginx.ingress.kubernetes.io/limit-connections: "50"
+    # Security headers
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      add_header X-Frame-Options "SAMEORIGIN" always;
+      add_header X-Content-Type-Options "nosniff" always;
+      add_header X-XSS-Protection "1; mode=block" always;
+      add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - conductor.example.com
+      secretName: conductor-tls
+  rules:
+    - host: conductor.example.com
+      http:
+        paths:
+          # Dashboard (frontend)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: dashboard
+                port:
+                  name: http
+          # REST API
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: control-plane-http
+                port:
+                  name: http
+          # WebSocket connections
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: control-plane-http
+                port:
+                  name: http
+          # Webhooks from Git providers
+          - path: /webhooks
+            pathType: Prefix
+            backend:
+              service:
+                name: control-plane-http
+                port:
+                  name: http
+---
+# gRPC Ingress (for external agents)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: conductor-grpc
+  namespace: conductor
+  labels:
+    app.kubernetes.io/name: conductor
+    app.kubernetes.io/part-of: conductor
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "GRPC"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - grpc.conductor.example.com
+      secretName: conductor-grpc-tls
+  rules:
+    - host: grpc.conductor.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: control-plane-grpc
+                port:
+                  name: grpc

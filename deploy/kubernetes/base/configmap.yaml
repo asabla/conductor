@@ -1,0 +1,207 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: control-plane-config
+  namespace: conductor
+  labels:
+    app.kubernetes.io/name: control-plane
+    app.kubernetes.io/component: control-plane
+    app.kubernetes.io/part-of: conductor
+data:
+  # Server configuration
+  HTTP_PORT: "8080"
+  GRPC_PORT: "9090"
+  METRICS_PORT: "8081"
+  
+  # Database configuration
+  DATABASE_HOST: "postgres"
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: "conductor"
+  DATABASE_SSL_MODE: "disable"
+  DATABASE_MAX_CONNECTIONS: "25"
+  DATABASE_MAX_IDLE_CONNECTIONS: "5"
+  DATABASE_CONN_MAX_LIFETIME: "5m"
+  
+  # Redis configuration
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+  
+  # MinIO/S3 configuration
+  S3_ENDPOINT: "minio:9000"
+  S3_BUCKET_ARTIFACTS: "conductor-artifacts"
+  S3_BUCKET_LOGS: "conductor-logs"
+  S3_USE_SSL: "false"
+  S3_REGION: "us-east-1"
+  
+  # Scheduler configuration
+  SCHEDULER_MAX_CONCURRENT_RUNS: "100"
+  SCHEDULER_DEFAULT_TIMEOUT: "30m"
+  SCHEDULER_CLEANUP_INTERVAL: "1h"
+  
+  # Agent management
+  AGENT_HEARTBEAT_TIMEOUT: "90s"
+  AGENT_RECONNECT_GRACE_PERIOD: "5m"
+  
+  # Git provider configuration
+  GIT_CLONE_TIMEOUT: "5m"
+  GIT_DEFAULT_BRANCH: "main"
+  
+  # Logging configuration
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+  
+  # OpenTelemetry configuration
+  OTEL_EXPORTER_OTLP_ENDPOINT: ""
+  OTEL_SERVICE_NAME: "conductor-control-plane"
+  OTEL_TRACES_SAMPLER: "parentbased_traceidratio"
+  OTEL_TRACES_SAMPLER_ARG: "0.1"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-config
+  namespace: conductor
+  labels:
+    app.kubernetes.io/name: agent
+    app.kubernetes.io/component: agent
+    app.kubernetes.io/part-of: conductor
+data:
+  # Control plane connection
+  CONTROL_PLANE_GRPC_ADDRESS: "control-plane-grpc:9090"
+  CONTROL_PLANE_GRPC_INSECURE: "true"
+  
+  # Agent configuration
+  AGENT_LABELS: "kubernetes=true"
+  AGENT_CAPABILITIES: "docker,subprocess"
+  AGENT_MAX_CONCURRENT_TESTS: "4"
+  AGENT_WORK_DIR: "/var/lib/conductor/work"
+  AGENT_CACHE_DIR: "/var/cache/conductor"
+  AGENT_DATA_DIR: "/var/lib/conductor/data"
+  
+  # Docker configuration
+  DOCKER_SOCKET: "/var/run/docker.sock"
+  DOCKER_DEFAULT_TIMEOUT: "30m"
+  DOCKER_CLEANUP_AFTER_TEST: "true"
+  
+  # Resource limits for test execution
+  TEST_CPU_LIMIT: "2"
+  TEST_MEMORY_LIMIT: "2Gi"
+  TEST_DEFAULT_TIMEOUT: "30m"
+  
+  # Heartbeat configuration
+  HEARTBEAT_INTERVAL: "30s"
+  
+  # Logging configuration
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+  
+  # Metrics
+  METRICS_PORT: "8082"
+  
+  # OpenTelemetry configuration
+  OTEL_EXPORTER_OTLP_ENDPOINT: ""
+  OTEL_SERVICE_NAME: "conductor-agent"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dashboard-nginx-config
+  namespace: conductor
+  labels:
+    app.kubernetes.io/name: dashboard
+    app.kubernetes.io/component: dashboard
+    app.kubernetes.io/part-of: conductor
+data:
+  nginx.conf: |
+    worker_processes auto;
+    error_log /tmp/error.log warn;
+    pid /tmp/nginx.pid;
+
+    events {
+        worker_connections 1024;
+        use epoll;
+        multi_accept on;
+    }
+
+    http {
+        include /etc/nginx/mime.types;
+        default_type application/octet-stream;
+
+        log_format json_combined escape=json
+            '{'
+            '"time_local":"$time_local",'
+            '"remote_addr":"$remote_addr",'
+            '"request":"$request",'
+            '"status":$status,'
+            '"body_bytes_sent":$body_bytes_sent,'
+            '"request_time":$request_time,'
+            '"http_referrer":"$http_referer",'
+            '"http_user_agent":"$http_user_agent"'
+            '}';
+
+        access_log /tmp/access.log json_combined;
+
+        sendfile on;
+        tcp_nopush on;
+        tcp_nodelay on;
+        keepalive_timeout 65;
+        types_hash_max_size 2048;
+
+        # Gzip compression
+        gzip on;
+        gzip_vary on;
+        gzip_proxied any;
+        gzip_comp_level 6;
+        gzip_types text/plain text/css text/xml application/json application/javascript application/xml+rss application/atom+xml image/svg+xml;
+
+        # Temp paths for read-only root filesystem
+        client_body_temp_path /tmp/client_body;
+        proxy_temp_path /tmp/proxy;
+        fastcgi_temp_path /tmp/fastcgi;
+        uwsgi_temp_path /tmp/uwsgi;
+        scgi_temp_path /tmp/scgi;
+
+        server {
+            listen 8080;
+            server_name _;
+            root /usr/share/nginx/html;
+            index index.html;
+
+            # Security headers
+            add_header X-Frame-Options "SAMEORIGIN" always;
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header X-XSS-Protection "1; mode=block" always;
+            add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+            # Health check endpoint
+            location /health {
+                access_log off;
+                return 200 "healthy\n";
+                add_header Content-Type text/plain;
+            }
+
+            # Static assets with caching
+            location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+                expires 1y;
+                add_header Cache-Control "public, immutable";
+                try_files $uri =404;
+            }
+
+            # SPA fallback - serve index.html for client-side routing
+            location / {
+                try_files $uri $uri/ /index.html;
+                
+                # No caching for HTML (for SPA updates)
+                location = /index.html {
+                    expires -1;
+                    add_header Cache-Control "no-store, no-cache, must-revalidate";
+                }
+            }
+
+            # Deny access to hidden files
+            location ~ /\. {
+                deny all;
+            }
+        }
+    }

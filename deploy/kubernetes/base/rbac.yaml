@@ -1,0 +1,180 @@
+# Service Accounts
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: control-plane
+  namespace: conductor
+  labels:
+    app.kubernetes.io/name: control-plane
+    app.kubernetes.io/component: control-plane
+    app.kubernetes.io/part-of: conductor
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agent
+  namespace: conductor
+  labels:
+    app.kubernetes.io/name: agent
+    app.kubernetes.io/component: agent
+    app.kubernetes.io/part-of: conductor
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: dashboard
+  namespace: conductor
+  labels:
+    app.kubernetes.io/name: dashboard
+    app.kubernetes.io/component: dashboard
+    app.kubernetes.io/part-of: conductor
+---
+# Role for control plane within the namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: control-plane
+  namespace: conductor
+  labels:
+    app.kubernetes.io/name: control-plane
+    app.kubernetes.io/component: control-plane
+    app.kubernetes.io/part-of: conductor
+rules:
+  # Read configmaps and secrets for configuration
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+  # Manage events for logging
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  # Read pods for health checks
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: control-plane
+  namespace: conductor
+  labels:
+    app.kubernetes.io/name: control-plane
+    app.kubernetes.io/component: control-plane
+    app.kubernetes.io/part-of: conductor
+subjects:
+  - kind: ServiceAccount
+    name: control-plane
+    namespace: conductor
+roleRef:
+  kind: Role
+  name: control-plane
+  apiGroup: rbac.authorization.k8s.io
+---
+# ClusterRole for agent to read node information
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: conductor-agent
+  labels:
+    app.kubernetes.io/name: agent
+    app.kubernetes.io/component: agent
+    app.kubernetes.io/part-of: conductor
+rules:
+  # Read node information for capacity reporting
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  # Read own pod information
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: conductor-agent
+  labels:
+    app.kubernetes.io/name: agent
+    app.kubernetes.io/component: agent
+    app.kubernetes.io/part-of: conductor
+subjects:
+  - kind: ServiceAccount
+    name: agent
+    namespace: conductor
+roleRef:
+  kind: ClusterRole
+  name: conductor-agent
+  apiGroup: rbac.authorization.k8s.io
+---
+# Role for agent within the namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agent
+  namespace: conductor
+  labels:
+    app.kubernetes.io/name: agent
+    app.kubernetes.io/component: agent
+    app.kubernetes.io/part-of: conductor
+rules:
+  # Read configmaps and secrets for configuration
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+  # Create events for logging
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agent
+  namespace: conductor
+  labels:
+    app.kubernetes.io/name: agent
+    app.kubernetes.io/component: agent
+    app.kubernetes.io/part-of: conductor
+subjects:
+  - kind: ServiceAccount
+    name: agent
+    namespace: conductor
+roleRef:
+  kind: Role
+  name: agent
+  apiGroup: rbac.authorization.k8s.io
+---
+# Minimal role for dashboard (read-only)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: dashboard
+  namespace: conductor
+  labels:
+    app.kubernetes.io/name: dashboard
+    app.kubernetes.io/component: dashboard
+    app.kubernetes.io/part-of: conductor
+rules:
+  # Read configmaps for configuration
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dashboard
+  namespace: conductor
+  labels:
+    app.kubernetes.io/name: dashboard
+    app.kubernetes.io/component: dashboard
+    app.kubernetes.io/part-of: conductor
+subjects:
+  - kind: ServiceAccount
+    name: dashboard
+    namespace: conductor
+roleRef:
+  kind: Role
+  name: dashboard
+  apiGroup: rbac.authorization.k8s.io
