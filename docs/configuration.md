@@ -97,6 +97,9 @@ postgres://user:password@host:5432/conductor?sslmode=require
 | `CONDUCTOR_BITBUCKET_WEBHOOK_SECRET` | Bitbucket webhook secret | - | No |
 | `CONDUCTOR_GIT_APP_ID` | GitHub App ID | - | No |
 | `CONDUCTOR_GIT_APP_PRIVATE_KEY_PATH` | GitHub App private key path | - | No |
+| `CONDUCTOR_GIT_APP_INSTALLATION_ID` | GitHub App installation ID | - | No |
+
+GitHub App authentication is enabled when the app ID, installation ID, and private key path are all set. Otherwise Conductor uses the personal access token if provided.
 
 ### Webhook Settings
 
@@ -183,6 +186,17 @@ The agent is configured via environment variables with the `CONDUCTOR_AGENT_` pr
 | `CONDUCTOR_AGENT_STORAGE_BUCKET` | Bucket name | - | No |
 | `CONDUCTOR_AGENT_STORAGE_REGION` | Region | `us-east-1` | No |
 | `CONDUCTOR_AGENT_STORAGE_USE_SSL` | Enable SSL | `true` | No |
+
+### Secrets Settings
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `CONDUCTOR_AGENT_SECRETS_PROVIDER` | Secrets provider (`vault`) | - | No |
+| `CONDUCTOR_AGENT_SECRETS_VAULT_ADDR` | Vault API address | - | If vault |
+| `CONDUCTOR_AGENT_SECRETS_VAULT_TOKEN` | Vault token | - | If vault |
+| `CONDUCTOR_AGENT_SECRETS_VAULT_NAMESPACE` | Vault namespace header | - | No |
+| `CONDUCTOR_AGENT_SECRETS_VAULT_MOUNT` | Vault KV v2 mount path | `secret` | No |
+| `CONDUCTOR_AGENT_SECRETS_VAULT_TIMEOUT` | Vault request timeout | `10s` | No |
 
 ### Resource Thresholds
 

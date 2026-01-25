@@ -493,7 +493,7 @@ func createArtifactStorage(cfg *config.Config, logger zerolog.Logger) (*artifact
 func createGitSyncer(cfg *config.Config, testRepo database.TestDefinitionRepository, logger zerolog.Logger) (server.GitSyncer, error) {
 	if !cfg.GitEnabled() {
 		logger.Info().Msg("git provider not configured - using noop syncer")
-		return nil, fmt.Errorf("git token not configured")
+		return nil, fmt.Errorf("git credentials not configured")
 	}
 
 	// Create slog adapter for git package
@@ -503,10 +503,22 @@ func createGitSyncer(cfg *config.Config, testRepo database.TestDefinitionReposit
 	slogLogger := slog.New(slogHandler).With("component", "git_syncer")
 
 	// Create git provider
+	var appPrivateKey string
+	if cfg.Git.AppPrivateKeyPath != "" {
+		keyBytes, err := os.ReadFile(cfg.Git.AppPrivateKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read git app private key: %w", err)
+		}
+		appPrivateKey = string(keyBytes)
+	}
+
 	gitCfg := git.Config{
-		Provider: cfg.Git.Provider,
-		Token:    cfg.Git.Token,
-		BaseURL:  cfg.Git.BaseURL,
+		Provider:          cfg.Git.Provider,
+		Token:             cfg.Git.Token,
+		BaseURL:           cfg.Git.BaseURL,
+		AppID:             cfg.Git.AppID,
+		AppPrivateKey:     appPrivateKey,
+		AppInstallationID: cfg.Git.AppInstallationID,
 	}
 
 	provider, err := git.NewProvider(gitCfg)

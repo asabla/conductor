@@ -281,6 +281,41 @@ func TestLoad_OIDCEnabled_AllFieldsPresent(t *testing.T) {
 	assert.Equal(t, "https://conductor.example.com/callback", cfg.Auth.OIDCRedirectURL)
 }
 
+func TestLoad_GitHubAppConfigMissingFields(t *testing.T) {
+	env := minimalValidEnv()
+	env["CONDUCTOR_GIT_APP_ID"] = "123"
+	setTestEnv(t, env)
+
+	_, err := Load()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "CONDUCTOR_GIT_APP_PRIVATE_KEY_PATH is required")
+	assert.Contains(t, err.Error(), "CONDUCTOR_GIT_APP_INSTALLATION_ID is required")
+}
+
+func TestLoad_GitHubAppConfigValid(t *testing.T) {
+	env := minimalValidEnv()
+	env["CONDUCTOR_GIT_APP_ID"] = "123"
+	env["CONDUCTOR_GIT_APP_PRIVATE_KEY_PATH"] = "/tmp/test-key.pem"
+	env["CONDUCTOR_GIT_APP_INSTALLATION_ID"] = "456"
+	setTestEnv(t, env)
+
+	_, err := Load()
+	require.NoError(t, err)
+}
+
+func TestLoad_GitHubAppConfigWrongProvider(t *testing.T) {
+	env := minimalValidEnv()
+	env["CONDUCTOR_GIT_PROVIDER"] = "gitlab"
+	env["CONDUCTOR_GIT_APP_ID"] = "123"
+	env["CONDUCTOR_GIT_APP_PRIVATE_KEY_PATH"] = "/tmp/test-key.pem"
+	env["CONDUCTOR_GIT_APP_INSTALLATION_ID"] = "456"
+	setTestEnv(t, env)
+
+	_, err := Load()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "CONDUCTOR_GIT_APP_* settings require")
+}
+
 func TestLoad_AgentHeartbeatTooShort(t *testing.T) {
 	env := minimalValidEnv()
 	env["CONDUCTOR_AGENT_HEARTBEAT_TIMEOUT"] = "5s"

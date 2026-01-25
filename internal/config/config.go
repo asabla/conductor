@@ -144,6 +144,8 @@ type GitConfig struct {
 	AppID int64
 	// AppPrivateKeyPath is the path to the GitHub App private key file
 	AppPrivateKeyPath string
+	// AppInstallationID is the GitHub App installation ID
+	AppInstallationID int64
 }
 
 // WebhookConfig holds configuration for webhook handling.
@@ -257,6 +259,7 @@ func Load() (*Config, error) {
 			BitbucketWebhookSecret: getEnv("CONDUCTOR_BITBUCKET_WEBHOOK_SECRET", ""),
 			AppID:                  int64(getEnvInt("CONDUCTOR_GIT_APP_ID", 0)),
 			AppPrivateKeyPath:      getEnv("CONDUCTOR_GIT_APP_PRIVATE_KEY_PATH", ""),
+			AppInstallationID:      int64(getEnvInt("CONDUCTOR_GIT_APP_INSTALLATION_ID", 0)),
 		},
 		Webhook: WebhookConfig{
 			Enabled: getEnvBool("CONDUCTOR_WEBHOOK_ENABLED", true),
@@ -400,6 +403,23 @@ func (c *Config) Validate() error {
 		errs = append(errs, errors.New("CONDUCTOR_LOG_FORMAT must be one of: json, console"))
 	}
 
+	// GitHub App validation (conditional)
+	appConfigured := c.Git.AppID > 0 || c.Git.AppPrivateKeyPath != "" || c.Git.AppInstallationID > 0
+	if appConfigured {
+		if c.Git.Provider != "" && strings.ToLower(c.Git.Provider) != "github" {
+			errs = append(errs, errors.New("CONDUCTOR_GIT_APP_* settings require CONDUCTOR_GIT_PROVIDER to be github"))
+		}
+		if c.Git.AppID <= 0 {
+			errs = append(errs, errors.New("CONDUCTOR_GIT_APP_ID is required when GitHub App authentication is enabled"))
+		}
+		if c.Git.AppPrivateKeyPath == "" {
+			errs = append(errs, errors.New("CONDUCTOR_GIT_APP_PRIVATE_KEY_PATH is required when GitHub App authentication is enabled"))
+		}
+		if c.Git.AppInstallationID <= 0 {
+			errs = append(errs, errors.New("CONDUCTOR_GIT_APP_INSTALLATION_ID is required when GitHub App authentication is enabled"))
+		}
+	}
+
 	if len(errs) > 0 {
 		return &ValidationError{Errors: errs}
 	}
@@ -437,7 +457,7 @@ func (c *Config) RedisEnabled() bool {
 
 // GitEnabled returns true if Git provider is configured with a token.
 func (c *Config) GitEnabled() bool {
-	return c.Git.Token != ""
+	return c.Git.Token != "" || c.Git.AppID > 0 || c.Git.AppPrivateKeyPath != "" || c.Git.AppInstallationID > 0
 }
 
 // WebhooksEnabled returns true if webhook handling is enabled.

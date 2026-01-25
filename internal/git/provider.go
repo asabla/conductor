@@ -135,6 +135,8 @@ type Config struct {
 	AppID int64
 	// AppPrivateKey is the GitHub App private key (optional)
 	AppPrivateKey string
+	// AppInstallationID is the GitHub App installation ID (optional)
+	AppInstallationID int64
 }
 
 // TestConfig represents test configuration discovered from a repository.

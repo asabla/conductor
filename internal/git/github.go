@@ -31,11 +31,12 @@ const (
 
 // GitHubProvider implements the Provider interface for GitHub.
 type GitHubProvider struct {
-	client    *http.Client
-	baseURL   string
-	token     string
-	userAgent string
-	logger    *slog.Logger
+	client      *http.Client
+	baseURL     string
+	token       string
+	tokenSource TokenSource
+	userAgent   string
+	logger      *slog.Logger
 
 	// Rate limiting
 	rateLimitMu        sync.RWMutex
@@ -51,10 +52,28 @@ func NewGitHubProvider(cfg Config) (*GitHubProvider, error) {
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
+	var tokenSource TokenSource
+	if cfg.AppID > 0 || cfg.AppPrivateKey != "" || cfg.AppInstallationID > 0 {
+		source, err := NewGitHubAppTokenSource(GitHubAppConfig{
+			AppID:          cfg.AppID,
+			InstallationID: cfg.AppInstallationID,
+			PrivateKey:     cfg.AppPrivateKey,
+			BaseURL:        baseURL,
+			UserAgent:      DefaultUserAgent,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to create GitHub app token source: %w", err)
+		}
+		tokenSource = source
+	} else if cfg.Token != "" {
+		tokenSource = NewStaticTokenSource(cfg.Token)
+	}
+
 	return &GitHubProvider{
 		client:             &http.Client{Timeout: DefaultHTTPTimeout},
 		baseURL:            baseURL,
 		token:              cfg.Token,
+		tokenSource:        tokenSource,
 		userAgent:          DefaultUserAgent,
 		logger:             slog.Default().With("component", "github_provider"),
 		rateLimitRemaining: -1, // Unknown initially
@@ -107,7 +126,9 @@ func (g *GitHubProvider) GetFile(ctx context.Context, owner, repo, path, ref str
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	g.setHeaders(req)
+	if err := g.setHeaders(ctx, req); err != nil {
+		return nil, fmt.Errorf("failed to set request headers: %w", err)
+	}
 	req.Header.Set("Accept", "application/vnd.github.v3.raw")
 
 	resp, err := g.doWithRateLimitAndRetry(ctx, req)
@@ -343,12 +364,23 @@ func (g *GitHubProvider) CreatePRComment(ctx context.Context, owner, repo string
 }
 
 // setHeaders sets common headers for GitHub API requests.
-func (g *GitHubProvider) setHeaders(req *http.Request) {
+func (g *GitHubProvider) setHeaders(ctx context.Context, req *http.Request) error {
 	req.Header.Set("User-Agent", g.userAgent)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	if g.tokenSource != nil {
+		token, err := g.tokenSource.Token(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get token: %w", err)
+		}
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		return nil
+	}
 	if g.token != "" {
 		req.Header.Set("Authorization", "Bearer "+g.token)
 	}
+	return nil
 }
 
 // doRequestWithRetry performs an HTTP request with retry logic.
@@ -385,7 +417,9 @@ func (g *GitHubProvider) doRequestWithRetry(ctx context.Context, method, url str
 			return fmt.Errorf("failed to create request: %w", err)
 		}
 
-		g.setHeaders(req)
+		if err := g.setHeaders(ctx, req); err != nil {
+			return fmt.Errorf("failed to set request headers: %w", err)
+		}
 		if body != nil {
 			req.Header.Set("Content-Type", "application/json")
 		}
