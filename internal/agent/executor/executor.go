@@ -20,19 +20,22 @@ type Executor interface {
 // ResultReporter is the interface for reporting execution progress and results.
 type ResultReporter interface {
 	// StreamLogs streams log output from the execution.
-	StreamLogs(ctx context.Context, runID string, stream conductorv1.LogStream, data []byte) error
+	StreamLogs(ctx context.Context, runID, shardID string, stream conductorv1.LogStream, data []byte) error
 
 	// ReportTestResult reports an individual test result.
-	ReportTestResult(ctx context.Context, runID string, result *conductorv1.TestResultEvent) error
+	ReportTestResult(ctx context.Context, runID, shardID string, result *conductorv1.TestResultEvent) error
 
 	// ReportProgress reports execution progress.
-	ReportProgress(ctx context.Context, runID string, phase string, message string, percent int, completed int, total int) error
+	ReportProgress(ctx context.Context, runID, shardID string, phase string, message string, percent int, completed int, total int) error
 }
 
 // ExecutionRequest contains all information needed to execute tests.
 type ExecutionRequest struct {
 	// RunID is the unique identifier for this run.
 	RunID string
+
+	// ShardID is the optional shard identifier.
+	ShardID string
 
 	// WorkDir is the absolute path to the repository workspace.
 	WorkDir string

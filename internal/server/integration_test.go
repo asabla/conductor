@@ -967,14 +967,14 @@ func (m *mockWorkScheduler) CancelWork(ctx context.Context, runID uuid.UUID, rea
 	return nil
 }
 
-func (m *mockWorkScheduler) HandleWorkAccepted(ctx context.Context, agentID uuid.UUID, runID uuid.UUID) error {
+func (m *mockWorkScheduler) HandleWorkAccepted(ctx context.Context, agentID uuid.UUID, runID uuid.UUID, shardID *uuid.UUID) error {
 	return nil
 }
 
-func (m *mockWorkScheduler) HandleWorkRejected(ctx context.Context, agentID uuid.UUID, runID uuid.UUID, reason string) error {
+func (m *mockWorkScheduler) HandleWorkRejected(ctx context.Context, agentID uuid.UUID, runID uuid.UUID, shardID *uuid.UUID, reason string) error {
 	return nil
 }
 
-func (m *mockWorkScheduler) HandleRunComplete(ctx context.Context, agentID uuid.UUID, runID uuid.UUID, result *conductorv1.RunComplete) error {
+func (m *mockWorkScheduler) HandleRunComplete(ctx context.Context, agentID uuid.UUID, runID uuid.UUID, shardID *uuid.UUID, result *conductorv1.RunComplete) error {
 	return nil
 }

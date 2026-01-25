@@ -34,21 +34,21 @@ func newTestReporter() *testReporter {
 	return &testReporter{}
 }
 
-func (r *testReporter) StreamLogs(ctx context.Context, runID string, stream conductorv1.LogStream, data []byte) error {
+func (r *testReporter) StreamLogs(ctx context.Context, runID, shardID string, stream conductorv1.LogStream, data []byte) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.logs = append(r.logs, logEntry{runID: runID, stream: stream, data: string(data)})
 	return nil
 }
 
-func (r *testReporter) ReportTestResult(ctx context.Context, runID string, result *conductorv1.TestResultEvent) error {
+func (r *testReporter) ReportTestResult(ctx context.Context, runID, shardID string, result *conductorv1.TestResultEvent) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.results = append(r.results, result)
 	return nil
 }
 
-func (r *testReporter) ReportProgress(ctx context.Context, runID string, phase string, message string, percent int, completed int, total int) error {
+func (r *testReporter) ReportProgress(ctx context.Context, runID, shardID string, phase string, message string, percent int, completed int, total int) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.progress = append(r.progress, progressEntry{

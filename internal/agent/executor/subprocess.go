@@ -57,13 +57,13 @@ func (e *SubprocessExecutor) Execute(ctx context.Context, req *ExecutionRequest,
 	env := e.setupEnvironment(req)
 
 	// Run setup commands
-	if err := reporter.ReportProgress(ctx, req.RunID, "setup", "Running setup commands", 5, 0, len(req.Tests)); err != nil {
+	if err := reporter.ReportProgress(ctx, req.RunID, req.ShardID, "setup", "Running setup commands", 5, 0, len(req.Tests)); err != nil {
 		e.logger.Warn().Err(err).Msg("Failed to report progress")
 	}
 
 	for i, cmd := range req.SetupCommands {
 		e.logger.Debug().Str("command", cmd).Int("index", i).Msg("Running setup command")
-		if err := e.runCommand(ctx, req.RunID, workDir, cmd, env, reporter); err != nil {
+		if err := e.runCommand(ctx, req.RunID, req.ShardID, workDir, cmd, env, reporter); err != nil {
 			return &ExecutionResult{
 				Error:    fmt.Sprintf("setup command %d failed: %v", i, err),
 				Duration: time.Since(startTime),
@@ -86,11 +86,11 @@ func (e *SubprocessExecutor) Execute(ctx context.Context, req *ExecutionRequest,
 		}
 
 		progress := int(float64(i+1)/float64(len(req.Tests))*80) + 10 // 10-90%
-		if err := reporter.ReportProgress(ctx, req.RunID, "testing", fmt.Sprintf("Running test: %s", test.Name), progress, i, len(req.Tests)); err != nil {
+		if err := reporter.ReportProgress(ctx, req.RunID, req.ShardID, "testing", fmt.Sprintf("Running test: %s", test.Name), progress, i, len(req.Tests)); err != nil {
 			e.logger.Warn().Err(err).Msg("Failed to report progress")
 		}
 
-		testResult := e.executeTest(ctx, req.RunID, workDir, test, env, reporter)
+		testResult := e.executeTest(ctx, req.RunID, req.ShardID, workDir, test, env, reporter)
 		result.TestResults = append(result.TestResults, testResult)
 
 		// Update summary
@@ -106,7 +106,7 @@ func (e *SubprocessExecutor) Execute(ctx context.Context, req *ExecutionRequest,
 		}
 
 		// Report test result
-		if err := reporter.ReportTestResult(ctx, req.RunID, &conductorv1.TestResultEvent{
+		if err := reporter.ReportTestResult(ctx, req.RunID, req.ShardID, &conductorv1.TestResultEvent{
 			TestId:       test.TestId,
 			TestName:     testResult.TestName,
 			Status:       testResult.Status,
@@ -121,14 +121,14 @@ func (e *SubprocessExecutor) Execute(ctx context.Context, req *ExecutionRequest,
 	}
 
 	// Run teardown commands
-	if err := reporter.ReportProgress(ctx, req.RunID, "teardown", "Running teardown commands", 95, len(req.Tests), len(req.Tests)); err != nil {
+	if err := reporter.ReportProgress(ctx, req.RunID, req.ShardID, "teardown", "Running teardown commands", 95, len(req.Tests), len(req.Tests)); err != nil {
 		e.logger.Warn().Err(err).Msg("Failed to report progress")
 	}
 
 	for i, cmd := range req.TeardownCommands {
 		e.logger.Debug().Str("command", cmd).Int("index", i).Msg("Running teardown command")
 		// Don't fail on teardown errors, just log them
-		if err := e.runCommand(ctx, req.RunID, workDir, cmd, env, reporter); err != nil {
+		if err := e.runCommand(ctx, req.RunID, req.ShardID, workDir, cmd, env, reporter); err != nil {
 			e.logger.Warn().Err(err).Str("command", cmd).Msg("Teardown command failed")
 		}
 	}
@@ -138,7 +138,7 @@ func (e *SubprocessExecutor) Execute(ctx context.Context, req *ExecutionRequest,
 }
 
 // executeTest runs a single test with optional retries.
-func (e *SubprocessExecutor) executeTest(ctx context.Context, runID, workDir string, test *conductorv1.TestToRun, env []string, reporter ResultReporter) *TestResult {
+func (e *SubprocessExecutor) executeTest(ctx context.Context, runID, shardIDValue, workDir string, test *conductorv1.TestToRun, env []string, reporter ResultReporter) *TestResult {
 	maxAttempts := int(test.RetryCount) + 1
 	if maxAttempts < 1 {
 		maxAttempts = 1
@@ -173,7 +173,7 @@ func (e *SubprocessExecutor) executeTest(ctx context.Context, runID, workDir str
 			Int("max_attempts", maxAttempts).
 			Msg("Executing test")
 
-		lastResult = e.runTest(testCtx, runID, workDir, test, testEnv, reporter, attempt)
+		lastResult = e.runTest(testCtx, runID, shardIDValue, workDir, test, testEnv, reporter, attempt)
 
 		// If passed, don't retry
 		if lastResult.Status == conductorv1.TestStatus_TEST_STATUS_PASS {
@@ -195,7 +195,7 @@ func (e *SubprocessExecutor) executeTest(ctx context.Context, runID, workDir str
 }
 
 // runTest executes a single test command.
-func (e *SubprocessExecutor) runTest(ctx context.Context, runID, workDir string, test *conductorv1.TestToRun, env []string, reporter ResultReporter, attempt int) *TestResult {
+func (e *SubprocessExecutor) runTest(ctx context.Context, runID, shardID, workDir string, test *conductorv1.TestToRun, env []string, reporter ResultReporter, attempt int) *TestResult {
 	startTime := time.Now()
 
 	result := &TestResult{
@@ -248,11 +248,11 @@ func (e *SubprocessExecutor) runTest(ctx context.Context, runID, workDir string,
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		e.captureOutput(ctx, runID, stdout, conductorv1.LogStream_LOG_STREAM_STDOUT, reporter, &stdoutBuf)
+		e.captureOutput(ctx, runID, shardID, stdout, conductorv1.LogStream_LOG_STREAM_STDOUT, reporter, &stdoutBuf)
 	}()
 	go func() {
 		defer wg.Done()
-		e.captureOutput(ctx, runID, stderr, conductorv1.LogStream_LOG_STREAM_STDERR, reporter, &stderrBuf)
+		e.captureOutput(ctx, runID, shardID, stderr, conductorv1.LogStream_LOG_STREAM_STDERR, reporter, &stderrBuf)
 	}()
 
 	// Wait for output capture
@@ -288,7 +288,7 @@ func (e *SubprocessExecutor) runTest(ctx context.Context, runID, workDir string,
 }
 
 // runCommand executes a setup/teardown command.
-func (e *SubprocessExecutor) runCommand(ctx context.Context, runID, workDir, command string, env []string, reporter ResultReporter) error {
+func (e *SubprocessExecutor) runCommand(ctx context.Context, runID, shardID, workDir, command string, env []string, reporter ResultReporter) error {
 	args := parseCommand(command)
 	if len(args) == 0 {
 		return errors.New("empty command")
@@ -322,11 +322,11 @@ func (e *SubprocessExecutor) runCommand(ctx context.Context, runID, workDir, com
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		e.captureOutput(ctx, runID, stdout, conductorv1.LogStream_LOG_STREAM_STDOUT, reporter, nil)
+		e.captureOutput(ctx, runID, shardID, stdout, conductorv1.LogStream_LOG_STREAM_STDOUT, reporter, nil)
 	}()
 	go func() {
 		defer wg.Done()
-		e.captureOutput(ctx, runID, stderr, conductorv1.LogStream_LOG_STREAM_STDERR, reporter, nil)
+		e.captureOutput(ctx, runID, shardID, stderr, conductorv1.LogStream_LOG_STREAM_STDERR, reporter, nil)
 	}()
 
 	wg.Wait()
@@ -358,7 +358,7 @@ func (e *SubprocessExecutor) setupEnvironment(req *ExecutionRequest) []string {
 }
 
 // captureOutput reads from a pipe and streams it to the reporter.
-func (e *SubprocessExecutor) captureOutput(ctx context.Context, runID string, r io.Reader, stream conductorv1.LogStream, reporter ResultReporter, buf *bytes.Buffer) {
+func (e *SubprocessExecutor) captureOutput(ctx context.Context, runID, shardID string, r io.Reader, stream conductorv1.LogStream, reporter ResultReporter, buf *bytes.Buffer) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024) // 64KB buffer, 1MB max line
 
@@ -382,7 +382,7 @@ func (e *SubprocessExecutor) captureOutput(ctx context.Context, runID string, r 
 		copy(data, line)
 		data[len(line)] = '\n'
 
-		if err := reporter.StreamLogs(ctx, runID, stream, data); err != nil {
+		if err := reporter.StreamLogs(ctx, runID, shardID, stream, data); err != nil {
 			e.logger.Debug().Err(err).Msg("Failed to stream logs")
 		}
 	}

@@ -115,7 +115,7 @@
 - [x] GitLab support
 - [x] Bitbucket support
 - [ ] Test parallelization within runs
-- [ ] Test sharding across agents
+- [x] Test sharding across agents
 - [ ] Flaky test detection and quarantine
 - [x] Test analytics dashboards
 - [x] Secret management integration (Vault, etc.)

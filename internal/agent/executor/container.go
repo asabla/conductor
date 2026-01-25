@@ -77,7 +77,7 @@ func (e *ContainerExecutor) Execute(ctx context.Context, req *ExecutionRequest, 
 		Msg("Starting container execution")
 
 	// Pull image
-	if err := reporter.ReportProgress(ctx, req.RunID, "setup", "Pulling container image", 5, 0, len(req.Tests)); err != nil {
+	if err := reporter.ReportProgress(ctx, req.RunID, req.ShardID, "setup", "Pulling container image", 5, 0, len(req.Tests)); err != nil {
 		e.logger.Warn().Err(err).Msg("Failed to report progress")
 	}
 
@@ -89,7 +89,7 @@ func (e *ContainerExecutor) Execute(ctx context.Context, req *ExecutionRequest, 
 	}
 
 	// Create container
-	if err := reporter.ReportProgress(ctx, req.RunID, "setup", "Creating container", 10, 0, len(req.Tests)); err != nil {
+	if err := reporter.ReportProgress(ctx, req.RunID, req.ShardID, "setup", "Creating container", 10, 0, len(req.Tests)); err != nil {
 		e.logger.Warn().Err(err).Msg("Failed to report progress")
 	}
 
@@ -119,13 +119,13 @@ func (e *ContainerExecutor) Execute(ctx context.Context, req *ExecutionRequest, 
 	}
 
 	// Run setup commands
-	if err := reporter.ReportProgress(ctx, req.RunID, "setup", "Running setup commands", 15, 0, len(req.Tests)); err != nil {
+	if err := reporter.ReportProgress(ctx, req.RunID, req.ShardID, "setup", "Running setup commands", 15, 0, len(req.Tests)); err != nil {
 		e.logger.Warn().Err(err).Msg("Failed to report progress")
 	}
 
 	for i, cmd := range req.SetupCommands {
 		e.logger.Debug().Str("command", cmd).Int("index", i).Msg("Running setup command in container")
-		if err := e.execInContainer(ctx, req.RunID, containerID, cmd, reporter); err != nil {
+		if err := e.execInContainer(ctx, req.RunID, req.ShardID, containerID, cmd, reporter); err != nil {
 			return &ExecutionResult{
 				Error:    fmt.Sprintf("setup command %d failed: %v", i, err),
 				Duration: time.Since(startTime),
@@ -148,11 +148,11 @@ func (e *ContainerExecutor) Execute(ctx context.Context, req *ExecutionRequest, 
 		}
 
 		progress := int(float64(i+1)/float64(len(req.Tests))*70) + 20 // 20-90%
-		if err := reporter.ReportProgress(ctx, req.RunID, "testing", fmt.Sprintf("Running test: %s", test.Name), progress, i, len(req.Tests)); err != nil {
+		if err := reporter.ReportProgress(ctx, req.RunID, req.ShardID, "testing", fmt.Sprintf("Running test: %s", test.Name), progress, i, len(req.Tests)); err != nil {
 			e.logger.Warn().Err(err).Msg("Failed to report progress")
 		}
 
-		testResult := e.executeTest(ctx, req.RunID, containerID, test, reporter)
+		testResult := e.executeTest(ctx, req.RunID, req.ShardID, containerID, test, reporter)
 		result.TestResults = append(result.TestResults, testResult)
 
 		// Update summary
@@ -168,7 +168,7 @@ func (e *ContainerExecutor) Execute(ctx context.Context, req *ExecutionRequest, 
 		}
 
 		// Report test result
-		if err := reporter.ReportTestResult(ctx, req.RunID, &conductorv1.TestResultEvent{
+		if err := reporter.ReportTestResult(ctx, req.RunID, req.ShardID, &conductorv1.TestResultEvent{
 			TestId:       test.TestId,
 			TestName:     testResult.TestName,
 			Status:       testResult.Status,
@@ -183,13 +183,13 @@ func (e *ContainerExecutor) Execute(ctx context.Context, req *ExecutionRequest, 
 	}
 
 	// Run teardown commands
-	if err := reporter.ReportProgress(ctx, req.RunID, "teardown", "Running teardown commands", 95, len(req.Tests), len(req.Tests)); err != nil {
+	if err := reporter.ReportProgress(ctx, req.RunID, req.ShardID, "teardown", "Running teardown commands", 95, len(req.Tests), len(req.Tests)); err != nil {
 		e.logger.Warn().Err(err).Msg("Failed to report progress")
 	}
 
 	for i, cmd := range req.TeardownCommands {
 		e.logger.Debug().Str("command", cmd).Int("index", i).Msg("Running teardown command in container")
-		if err := e.execInContainer(ctx, req.RunID, containerID, cmd, reporter); err != nil {
+		if err := e.execInContainer(ctx, req.RunID, req.ShardID, containerID, cmd, reporter); err != nil {
 			e.logger.Warn().Err(err).Str("command", cmd).Msg("Teardown command failed")
 		}
 	}
@@ -284,7 +284,7 @@ func (e *ContainerExecutor) startContainer(ctx context.Context, containerID stri
 }
 
 // execInContainer executes a command inside the container.
-func (e *ContainerExecutor) execInContainer(ctx context.Context, runID, containerID, command string, reporter ResultReporter) error {
+func (e *ContainerExecutor) execInContainer(ctx context.Context, runID, shardID, containerID, command string, reporter ResultReporter) error {
 	execConfig := container.ExecOptions{
 		Cmd:          []string{"/bin/sh", "-c", command},
 		AttachStdout: true,
@@ -307,7 +307,7 @@ func (e *ContainerExecutor) execInContainer(ctx context.Context, runID, containe
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		e.streamContainerOutput(ctx, runID, attachResp.Reader, reporter)
+		e.streamContainerOutput(ctx, runID, shardID, attachResp.Reader, reporter)
 	}()
 
 	wg.Wait()
@@ -326,7 +326,7 @@ func (e *ContainerExecutor) execInContainer(ctx context.Context, runID, containe
 }
 
 // executeTest runs a single test with optional retries inside the container.
-func (e *ContainerExecutor) executeTest(ctx context.Context, runID, containerID string, test *conductorv1.TestToRun, reporter ResultReporter) *TestResult {
+func (e *ContainerExecutor) executeTest(ctx context.Context, runID, shardID, containerID string, test *conductorv1.TestToRun, reporter ResultReporter) *TestResult {
 	maxAttempts := int(test.RetryCount) + 1
 	if maxAttempts < 1 {
 		maxAttempts = 1
@@ -351,7 +351,7 @@ func (e *ContainerExecutor) executeTest(ctx context.Context, runID, containerID 
 			Int("max_attempts", maxAttempts).
 			Msg("Executing test in container")
 
-		lastResult = e.runTestInContainer(testCtx, runID, containerID, test, reporter, attempt)
+		lastResult = e.runTestInContainer(testCtx, runID, shardID, containerID, test, reporter, attempt)
 
 		// If passed or skipped, don't retry
 		if lastResult.Status == conductorv1.TestStatus_TEST_STATUS_PASS ||
@@ -369,7 +369,7 @@ func (e *ContainerExecutor) executeTest(ctx context.Context, runID, containerID 
 }
 
 // runTestInContainer executes a single test command inside the container.
-func (e *ContainerExecutor) runTestInContainer(ctx context.Context, runID, containerID string, test *conductorv1.TestToRun, reporter ResultReporter, attempt int) *TestResult {
+func (e *ContainerExecutor) runTestInContainer(ctx context.Context, runID, shardID, containerID string, test *conductorv1.TestToRun, reporter ResultReporter, attempt int) *TestResult {
 	startTime := time.Now()
 
 	result := &TestResult{
@@ -414,7 +414,7 @@ func (e *ContainerExecutor) runTestInContainer(ctx context.Context, runID, conta
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		e.streamContainerOutputWithCapture(ctx, runID, attachResp.Reader, reporter, &outputBuf)
+		e.streamContainerOutputWithCapture(ctx, runID, shardID, attachResp.Reader, reporter, &outputBuf)
 	}()
 
 	wg.Wait()
@@ -439,7 +439,7 @@ func (e *ContainerExecutor) runTestInContainer(ctx context.Context, runID, conta
 }
 
 // streamContainerOutput streams container output to the reporter.
-func (e *ContainerExecutor) streamContainerOutput(ctx context.Context, runID string, reader io.Reader, reporter ResultReporter) {
+func (e *ContainerExecutor) streamContainerOutput(ctx context.Context, runID, shardID string, reader io.Reader, reporter ResultReporter) {
 	// Docker multiplexes stdout/stderr in the stream
 	pr, pw := io.Pipe()
 
@@ -463,7 +463,7 @@ func (e *ContainerExecutor) streamContainerOutput(ctx context.Context, runID str
 		if n > 0 {
 			data := make([]byte, n)
 			copy(data, buf[:n])
-			if reportErr := reporter.StreamLogs(ctx, runID, conductorv1.LogStream_LOG_STREAM_STDOUT, data); reportErr != nil {
+			if reportErr := reporter.StreamLogs(ctx, runID, shardID, conductorv1.LogStream_LOG_STREAM_STDOUT, data); reportErr != nil {
 				e.logger.Debug().Err(reportErr).Msg("Failed to stream logs")
 			}
 		}
@@ -474,7 +474,7 @@ func (e *ContainerExecutor) streamContainerOutput(ctx context.Context, runID str
 }
 
 // streamContainerOutputWithCapture streams and captures container output.
-func (e *ContainerExecutor) streamContainerOutputWithCapture(ctx context.Context, runID string, reader io.Reader, reporter ResultReporter, capture *strings.Builder) {
+func (e *ContainerExecutor) streamContainerOutputWithCapture(ctx context.Context, runID, shardID string, reader io.Reader, reporter ResultReporter, capture *strings.Builder) {
 	pr, pw := io.Pipe()
 
 	go func() {
@@ -500,7 +500,7 @@ func (e *ContainerExecutor) streamContainerOutputWithCapture(ctx context.Context
 
 			dataCopy := make([]byte, n)
 			copy(dataCopy, data)
-			if reportErr := reporter.StreamLogs(ctx, runID, conductorv1.LogStream_LOG_STREAM_STDOUT, dataCopy); reportErr != nil {
+			if reportErr := reporter.StreamLogs(ctx, runID, shardID, conductorv1.LogStream_LOG_STREAM_STDOUT, dataCopy); reportErr != nil {
 				e.logger.Debug().Err(reportErr).Msg("Failed to stream logs")
 			}
 		}

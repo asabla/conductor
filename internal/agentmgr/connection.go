@@ -212,10 +212,15 @@ func (c *AgentConnection) SendAssignment(ctx context.Context, assignment *WorkAs
 	}
 
 	// Track as active run
-	c.AddActiveRun(assignment.Run.ID)
+	activeID := assignment.Run.ID
+	if assignment.Shard != nil {
+		activeID = assignment.Shard.ID
+	}
+	c.AddActiveRun(activeID)
 
 	c.logger.Info("sent work assignment",
 		"run_id", assignment.Run.ID,
+		"shard_id", shardID(assignment.Shard),
 		"service_id", assignment.Service.ID,
 	)
 

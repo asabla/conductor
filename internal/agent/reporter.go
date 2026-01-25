@@ -28,7 +28,7 @@ func NewReporter(client *Client, logger zerolog.Logger) *Reporter {
 }
 
 // StreamLogs streams log output to the control plane.
-func (r *Reporter) StreamLogs(ctx context.Context, runID string, stream conductorv1.LogStream, data []byte) error {
+func (r *Reporter) StreamLogs(ctx context.Context, runID, shardID string, stream conductorv1.LogStream, data []byte) error {
 	if len(data) == 0 {
 		return nil
 	}
@@ -37,6 +37,7 @@ func (r *Reporter) StreamLogs(ctx context.Context, runID string, stream conducto
 		Message: &conductorv1.AgentMessage_ResultStream{
 			ResultStream: &conductorv1.ResultStream{
 				RunId:    runID,
+				ShardId:  shardID,
 				Sequence: r.sequence.Add(1),
 				Payload: &conductorv1.ResultStream_LogChunk{
 					LogChunk: &conductorv1.LogChunk{
@@ -52,11 +53,12 @@ func (r *Reporter) StreamLogs(ctx context.Context, runID string, stream conducto
 }
 
 // ReportTestResult reports an individual test result.
-func (r *Reporter) ReportTestResult(ctx context.Context, runID string, result *conductorv1.TestResultEvent) error {
+func (r *Reporter) ReportTestResult(ctx context.Context, runID, shardID string, result *conductorv1.TestResultEvent) error {
 	msg := &conductorv1.AgentMessage{
 		Message: &conductorv1.AgentMessage_ResultStream{
 			ResultStream: &conductorv1.ResultStream{
 				RunId:    runID,
+				ShardId:  shardID,
 				Sequence: r.sequence.Add(1),
 				Payload: &conductorv1.ResultStream_TestResult{
 					TestResult: result,
@@ -69,11 +71,12 @@ func (r *Reporter) ReportTestResult(ctx context.Context, runID string, result *c
 }
 
 // ReportProgress reports execution progress.
-func (r *Reporter) ReportProgress(ctx context.Context, runID string, phase string, message string, percent int, completed int, total int) error {
+func (r *Reporter) ReportProgress(ctx context.Context, runID, shardID string, phase string, message string, percent int, completed int, total int) error {
 	msg := &conductorv1.AgentMessage{
 		Message: &conductorv1.AgentMessage_ResultStream{
 			ResultStream: &conductorv1.ResultStream{
 				RunId:    runID,
+				ShardId:  shardID,
 				Sequence: r.sequence.Add(1),
 				Payload: &conductorv1.ResultStream_Progress{
 					Progress: &conductorv1.ProgressUpdate{
@@ -92,15 +95,17 @@ func (r *Reporter) ReportProgress(ctx context.Context, runID string, phase strin
 }
 
 // ReportComplete reports run completion status.
-func (r *Reporter) ReportComplete(ctx context.Context, runID string, status conductorv1.RunStatus, errorMsg string) error {
+func (r *Reporter) ReportComplete(ctx context.Context, runID, shardID string, status conductorv1.RunStatus, errorMsg string) error {
 	msg := &conductorv1.AgentMessage{
 		Message: &conductorv1.AgentMessage_ResultStream{
 			ResultStream: &conductorv1.ResultStream{
 				RunId:    runID,
+				ShardId:  shardID,
 				Sequence: r.sequence.Add(1),
 				Payload: &conductorv1.ResultStream_RunComplete{
 					RunComplete: &conductorv1.RunComplete{
 						Status:       status,
+						ShardId:      shardID,
 						ErrorMessage: errorMsg,
 					},
 				},
@@ -112,7 +117,7 @@ func (r *Reporter) ReportComplete(ctx context.Context, runID string, status cond
 }
 
 // ReportRunComplete reports full run completion with summary.
-func (r *Reporter) ReportRunComplete(ctx context.Context, runID string, result *executor.ExecutionResult) error {
+func (r *Reporter) ReportRunComplete(ctx context.Context, runID, shardID string, result *executor.ExecutionResult) error {
 	var summary *conductorv1.RunSummary
 	if result.Summary != nil {
 		summary = &conductorv1.RunSummary{
@@ -140,12 +145,14 @@ func (r *Reporter) ReportRunComplete(ctx context.Context, runID string, result *
 		Message: &conductorv1.AgentMessage_ResultStream{
 			ResultStream: &conductorv1.ResultStream{
 				RunId:    runID,
+				ShardId:  shardID,
 				Sequence: r.sequence.Add(1),
 				Payload: &conductorv1.ResultStream_RunComplete{
 					RunComplete: &conductorv1.RunComplete{
 						Status:       status,
 						Summary:      summary,
 						ErrorMessage: result.Error,
+						ShardId:      shardID,
 						Duration: &conductorv1.Duration{
 							Seconds: int64(result.Duration.Seconds()),
 							Nanos:   int32(result.Duration.Nanoseconds() % 1e9),

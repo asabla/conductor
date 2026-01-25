@@ -60,6 +60,8 @@ type Agent struct {
 // activeRun tracks an in-progress test run.
 type activeRun struct {
 	runID      string
+	shardID    string
+	workKey    string
 	work       *conductorv1.AssignWork
 	startTime  time.Time
 	cancelFunc context.CancelFunc
@@ -382,25 +384,25 @@ func (a *Agent) handleAssignWork(work *conductorv1.AssignWork) error {
 
 	// Check if draining
 	if a.draining.Load() {
-		return a.rejectWork(work.RunId, "agent is draining", true)
+		return a.rejectWork(work.RunId, work.ShardId, "agent is draining", true)
 	}
 
 	// Check if we can accept more work
 	if !a.canAcceptWork() {
-		return a.rejectWork(work.RunId, "resource limits exceeded", true)
+		return a.rejectWork(work.RunId, work.ShardId, "resource limits exceeded", true)
 	}
 
 	// Check if we have the right executor
 	if work.ExecutionType == conductorv1.ExecutionType_EXECUTION_TYPE_CONTAINER && a.containerExecutor == nil {
-		return a.rejectWork(work.RunId, "container execution not available", false)
+		return a.rejectWork(work.RunId, work.ShardId, "container execution not available", false)
 	}
 
 	// Accept the work
 	select {
 	case a.workChan <- work:
-		return a.acceptWork(work.RunId)
+		return a.acceptWork(work.RunId, work.ShardId)
 	default:
-		return a.rejectWork(work.RunId, "work queue full", true)
+		return a.rejectWork(work.RunId, work.ShardId, "work queue full", true)
 	}
 }
 
@@ -443,11 +445,12 @@ func (a *Agent) handleDrain(drain *conductorv1.Drain) error {
 }
 
 // acceptWork sends a work accepted message.
-func (a *Agent) acceptWork(runID string) error {
+func (a *Agent) acceptWork(runID, shardID string) error {
 	msg := &conductorv1.AgentMessage{
 		Message: &conductorv1.AgentMessage_WorkAccepted{
 			WorkAccepted: &conductorv1.WorkAccepted{
-				RunId: runID,
+				RunId:   runID,
+				ShardId: shardID,
 			},
 		},
 	}
@@ -455,9 +458,10 @@ func (a *Agent) acceptWork(runID string) error {
 }
 
 // rejectWork sends a work rejected message.
-func (a *Agent) rejectWork(runID, reason string, temporary bool) error {
+func (a *Agent) rejectWork(runID, shardID, reason string, temporary bool) error {
 	a.logger.Info().
 		Str("run_id", runID).
+		Str("shard_id", shardID).
 		Str("reason", reason).
 		Bool("temporary", temporary).
 		Msg("Rejecting work")
@@ -466,6 +470,7 @@ func (a *Agent) rejectWork(runID, reason string, temporary bool) error {
 		Message: &conductorv1.AgentMessage_WorkRejected{
 			WorkRejected: &conductorv1.WorkRejected{
 				RunId:     runID,
+				ShardId:   shardID,
 				Reason:    reason,
 				Temporary: temporary,
 			},
@@ -496,7 +501,12 @@ func (a *Agent) workProcessor(ctx context.Context, workerID int) {
 // processWork executes a single work assignment.
 func (a *Agent) processWork(ctx context.Context, work *conductorv1.AssignWork, logger zerolog.Logger) {
 	runID := work.RunId
-	logger = logger.With().Str("run_id", runID).Logger()
+	shardID := work.ShardId
+	workKey := runID
+	if shardID != "" {
+		workKey = shardID
+	}
+	logger = logger.With().Str("run_id", runID).Str("shard_id", shardID).Logger()
 	logger.Info().Msg("Starting work execution")
 
 	// Create cancellable context
@@ -515,13 +525,15 @@ func (a *Agent) processWork(ctx context.Context, work *conductorv1.AssignWork, l
 	exec := a.selectExecutor(work.ExecutionType)
 	if exec == nil {
 		logger.Error().Msg("No executor available for execution type")
-		a.reporter.ReportComplete(ctx, runID, conductorv1.RunStatus_RUN_STATUS_ERROR, "no executor available")
+		a.reporter.ReportComplete(ctx, runID, shardID, conductorv1.RunStatus_RUN_STATUS_ERROR, "no executor available")
 		return
 	}
 
 	// Track active run
 	run := &activeRun{
 		runID:      runID,
+		shardID:    shardID,
+		workKey:    workKey,
 		work:       work,
 		startTime:  time.Now(),
 		cancelFunc: cancel,
@@ -529,7 +541,7 @@ func (a *Agent) processWork(ctx context.Context, work *conductorv1.AssignWork, l
 	}
 
 	a.activeRunsMu.Lock()
-	a.activeRuns[runID] = run
+	a.activeRuns[workKey] = run
 	a.activeRunsMu.Unlock()
 	a.updateStatus()
 
@@ -540,7 +552,7 @@ func (a *Agent) processWork(ctx context.Context, work *conductorv1.AssignWork, l
 
 	defer func() {
 		a.activeRunsMu.Lock()
-		delete(a.activeRuns, runID)
+		delete(a.activeRuns, workKey)
 		a.activeRunsMu.Unlock()
 		a.updateStatus()
 
@@ -554,12 +566,12 @@ func (a *Agent) processWork(ctx context.Context, work *conductorv1.AssignWork, l
 	repoPath, err := a.cloneRepository(runCtx, work, logger)
 	if err != nil {
 		logger.Error().Err(err).Msg("Failed to clone repository")
-		a.reporter.ReportComplete(ctx, runID, conductorv1.RunStatus_RUN_STATUS_ERROR, fmt.Sprintf("clone failed: %v", err))
+		a.reporter.ReportComplete(ctx, runID, shardID, conductorv1.RunStatus_RUN_STATUS_ERROR, fmt.Sprintf("clone failed: %v", err))
 		return
 	}
 
 	// Report progress
-	a.reporter.ReportProgress(ctx, runID, "setup", "Repository cloned", 10, 0, len(work.Tests))
+	a.reporter.ReportProgress(ctx, runID, shardID, "setup", "Repository cloned", 10, 0, len(work.Tests))
 
 	resolvedEnv := make(map[string]string, len(work.Environment))
 	for key, value := range work.Environment {
@@ -570,7 +582,7 @@ func (a *Agent) processWork(ctx context.Context, work *conductorv1.AssignWork, l
 		secretValues, err := a.resolveSecrets(runCtx, work.Secrets)
 		if err != nil {
 			logger.Error().Err(err).Msg("Failed to resolve secrets")
-			a.reporter.ReportComplete(ctx, runID, conductorv1.RunStatus_RUN_STATUS_ERROR, err.Error())
+			a.reporter.ReportComplete(ctx, runID, shardID, conductorv1.RunStatus_RUN_STATUS_ERROR, err.Error())
 			return
 		}
 		for key, value := range secretValues {
@@ -581,6 +593,7 @@ func (a *Agent) processWork(ctx context.Context, work *conductorv1.AssignWork, l
 	// Prepare execution request
 	execReq := &executor.ExecutionRequest{
 		RunID:            runID,
+		ShardID:          shardID,
 		WorkDir:          repoPath,
 		WorkingDirectory: work.WorkingDirectory,
 		Tests:            work.Tests,
@@ -601,16 +614,16 @@ func (a *Agent) processWork(ctx context.Context, work *conductorv1.AssignWork, l
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			logger.Info().Msg("Run was cancelled")
-			a.reporter.ReportComplete(ctx, runID, conductorv1.RunStatus_RUN_STATUS_CANCELLED, "cancelled")
+			a.reporter.ReportComplete(ctx, runID, shardID, conductorv1.RunStatus_RUN_STATUS_CANCELLED, "cancelled")
 			return
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			logger.Warn().Msg("Run timed out")
-			a.reporter.ReportComplete(ctx, runID, conductorv1.RunStatus_RUN_STATUS_TIMEOUT, "timeout exceeded")
+			a.reporter.ReportComplete(ctx, runID, shardID, conductorv1.RunStatus_RUN_STATUS_TIMEOUT, "timeout exceeded")
 			return
 		}
 		logger.Error().Err(err).Msg("Execution failed")
-		a.reporter.ReportComplete(ctx, runID, conductorv1.RunStatus_RUN_STATUS_ERROR, err.Error())
+		a.reporter.ReportComplete(ctx, runID, shardID, conductorv1.RunStatus_RUN_STATUS_ERROR, err.Error())
 		return
 	}
 
@@ -630,7 +643,7 @@ func (a *Agent) processWork(ctx context.Context, work *conductorv1.AssignWork, l
 		Int("failed", result.Summary.Failed).
 		Msg("Run completed")
 
-	a.reporter.ReportRunComplete(ctx, runID, result)
+	a.reporter.ReportRunComplete(ctx, runID, shardID, result)
 }
 
 // cloneRepository clones the repository for the work assignment.
@@ -746,14 +759,17 @@ func (a *Agent) cancelProcessor(ctx context.Context) {
 		case <-a.shutdownChan:
 			return
 		case runID := <-a.cancelChan:
+			var cancelled bool
 			a.activeRunsMu.RLock()
-			run, ok := a.activeRuns[runID]
+			for _, run := range a.activeRuns {
+				if run.runID == runID || run.shardID == runID || run.workKey == runID {
+					a.logger.Info().Str("run_id", run.runID).Str("shard_id", run.shardID).Msg("Cancelling run")
+					run.cancelFunc()
+					cancelled = true
+				}
+			}
 			a.activeRunsMu.RUnlock()
-
-			if ok {
-				a.logger.Info().Str("run_id", runID).Msg("Cancelling run")
-				run.cancelFunc()
-			} else {
+			if !cancelled {
 				a.logger.Debug().Str("run_id", runID).Msg("Run not found for cancellation")
 			}
 		}
@@ -864,7 +880,7 @@ func (a *Agent) recoverPendingRuns(ctx context.Context) error {
 	for _, run := range runs {
 		a.logger.Info().Str("run_id", run.RunID).Msg("Found pending run from previous session")
 		// Mark as error since we can't resume
-		a.reporter.ReportComplete(ctx, run.RunID, conductorv1.RunStatus_RUN_STATUS_ERROR, "agent restarted during execution")
+		a.reporter.ReportComplete(ctx, run.RunID, "", conductorv1.RunStatus_RUN_STATUS_ERROR, "agent restarted during execution")
 		if err := a.state.DeleteRunState(run.RunID); err != nil {
 			a.logger.Warn().Err(err).Str("run_id", run.RunID).Msg("Failed to delete recovered run state")
 		}

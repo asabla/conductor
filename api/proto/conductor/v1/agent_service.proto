@@ -257,6 +257,8 @@ message ResultStream {
   string run_id = 1;
   // Sequence number for ordering.
   int64 sequence = 2;
+  // Shard ID if these results belong to a shard.
+  string shard_id = 8;
   
   oneof payload {
     // Chunk of log output.

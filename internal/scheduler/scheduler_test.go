@@ -236,13 +236,94 @@ func (m *MockAgentManager) GetAvailableAgents(ctx context.Context, zones []strin
 	return args.Get(0).([]*AgentInfo), args.Error(1)
 }
 
-func (m *MockAgentManager) AssignWork(ctx context.Context, agentID uuid.UUID, run *database.TestRun) error {
-	args := m.Called(ctx, agentID, run)
+func (m *MockAgentManager) AssignWork(ctx context.Context, agentID uuid.UUID, run *database.TestRun, shard *database.RunShard, tests []database.TestDefinition) error {
+	args := m.Called(ctx, agentID, run, shard, tests)
 	return args.Error(0)
 }
 
 func (m *MockAgentManager) CancelWork(ctx context.Context, agentID uuid.UUID, runID uuid.UUID, reason string) error {
 	args := m.Called(ctx, agentID, runID, reason)
+	return args.Error(0)
+}
+
+// MockTestRepo is a mock implementation of TestDefinitionRepository.
+type MockTestRepo struct {
+	mock.Mock
+}
+
+func (m *MockTestRepo) Create(ctx context.Context, def *database.TestDefinition) error {
+	args := m.Called(ctx, def)
+	return args.Error(0)
+}
+
+func (m *MockTestRepo) Get(ctx context.Context, id uuid.UUID) (*database.TestDefinition, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*database.TestDefinition), args.Error(1)
+}
+
+func (m *MockTestRepo) Update(ctx context.Context, def *database.TestDefinition) error {
+	args := m.Called(ctx, def)
+	return args.Error(0)
+}
+
+func (m *MockTestRepo) Delete(ctx context.Context, id uuid.UUID) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
+func (m *MockTestRepo) ListByService(ctx context.Context, serviceID uuid.UUID, page database.Pagination) ([]database.TestDefinition, error) {
+	args := m.Called(ctx, serviceID, page)
+	return args.Get(0).([]database.TestDefinition), args.Error(1)
+}
+
+func (m *MockTestRepo) ListByTags(ctx context.Context, serviceID uuid.UUID, tags []string, page database.Pagination) ([]database.TestDefinition, error) {
+	args := m.Called(ctx, serviceID, tags, page)
+	return args.Get(0).([]database.TestDefinition), args.Error(1)
+}
+
+// MockRunShardRepo is a mock implementation of RunShardRepository.
+type MockRunShardRepo struct {
+	mock.Mock
+}
+
+func (m *MockRunShardRepo) Create(ctx context.Context, shard *database.RunShard) error {
+	args := m.Called(ctx, shard)
+	return args.Error(0)
+}
+
+func (m *MockRunShardRepo) Get(ctx context.Context, id uuid.UUID) (*database.RunShard, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*database.RunShard), args.Error(1)
+}
+
+func (m *MockRunShardRepo) ListByRun(ctx context.Context, runID uuid.UUID) ([]database.RunShard, error) {
+	args := m.Called(ctx, runID)
+	return args.Get(0).([]database.RunShard), args.Error(1)
+}
+
+func (m *MockRunShardRepo) UpdateStatus(ctx context.Context, id uuid.UUID, status database.ShardStatus) error {
+	args := m.Called(ctx, id, status)
+	return args.Error(0)
+}
+
+func (m *MockRunShardRepo) Start(ctx context.Context, id uuid.UUID, agentID uuid.UUID) error {
+	args := m.Called(ctx, id, agentID)
+	return args.Error(0)
+}
+
+func (m *MockRunShardRepo) Finish(ctx context.Context, id uuid.UUID, status database.ShardStatus, results database.RunResults) error {
+	args := m.Called(ctx, id, status, results)
+	return args.Error(0)
+}
+
+func (m *MockRunShardRepo) DeleteByRun(ctx context.Context, runID uuid.UUID) error {
+	args := m.Called(ctx, runID)
 	return args.Error(0)
 }
 
@@ -261,6 +342,8 @@ func TestScheduler_ScheduleRun(t *testing.T) {
 		mockRunRepo := new(MockRunRepo)
 		mockServiceRepo := new(MockServiceRepo)
 		mockAgentRepo := new(MockAgentRepo)
+		mockTestRepo := new(MockTestRepo)
+		mockShardRepo := new(MockRunShardRepo)
 		mockAgentMgr := new(MockAgentManager)
 		queue := NewQueue(mockRunRepo)
 
@@ -268,6 +351,8 @@ func TestScheduler_ScheduleRun(t *testing.T) {
 			mockRunRepo,
 			mockServiceRepo,
 			mockAgentRepo,
+			mockTestRepo,
+			mockShardRepo,
 			mockAgentMgr,
 			queue,
 			nil,
@@ -304,6 +389,8 @@ func TestScheduler_ScheduleRun(t *testing.T) {
 		mockRunRepo := new(MockRunRepo)
 		mockServiceRepo := new(MockServiceRepo)
 		mockAgentRepo := new(MockAgentRepo)
+		mockTestRepo := new(MockTestRepo)
+		mockShardRepo := new(MockRunShardRepo)
 		mockAgentMgr := new(MockAgentManager)
 		queue := NewQueue(mockRunRepo)
 
@@ -311,6 +398,8 @@ func TestScheduler_ScheduleRun(t *testing.T) {
 			mockRunRepo,
 			mockServiceRepo,
 			mockAgentRepo,
+			mockTestRepo,
+			mockShardRepo,
 			mockAgentMgr,
 			queue,
 			nil,
@@ -347,6 +436,8 @@ func TestScheduler_CancelRun(t *testing.T) {
 		mockRunRepo := new(MockRunRepo)
 		mockServiceRepo := new(MockServiceRepo)
 		mockAgentRepo := new(MockAgentRepo)
+		mockTestRepo := new(MockTestRepo)
+		mockShardRepo := new(MockRunShardRepo)
 		mockAgentMgr := new(MockAgentManager)
 		queue := NewQueue(mockRunRepo)
 
@@ -354,6 +445,8 @@ func TestScheduler_CancelRun(t *testing.T) {
 			mockRunRepo,
 			mockServiceRepo,
 			mockAgentRepo,
+			mockTestRepo,
+			mockShardRepo,
 			mockAgentMgr,
 			queue,
 			nil,
@@ -382,6 +475,8 @@ func TestScheduler_CancelRun(t *testing.T) {
 		mockRunRepo := new(MockRunRepo)
 		mockServiceRepo := new(MockServiceRepo)
 		mockAgentRepo := new(MockAgentRepo)
+		mockTestRepo := new(MockTestRepo)
+		mockShardRepo := new(MockRunShardRepo)
 		mockAgentMgr := new(MockAgentManager)
 		queue := NewQueue(mockRunRepo)
 
@@ -389,6 +484,8 @@ func TestScheduler_CancelRun(t *testing.T) {
 			mockRunRepo,
 			mockServiceRepo,
 			mockAgentRepo,
+			mockTestRepo,
+			mockShardRepo,
 			mockAgentMgr,
 			queue,
 			nil,
@@ -421,6 +518,8 @@ func TestScheduler_CancelRun(t *testing.T) {
 		mockRunRepo := new(MockRunRepo)
 		mockServiceRepo := new(MockServiceRepo)
 		mockAgentRepo := new(MockAgentRepo)
+		mockTestRepo := new(MockTestRepo)
+		mockShardRepo := new(MockRunShardRepo)
 		mockAgentMgr := new(MockAgentManager)
 		queue := NewQueue(mockRunRepo)
 
@@ -428,6 +527,8 @@ func TestScheduler_CancelRun(t *testing.T) {
 			mockRunRepo,
 			mockServiceRepo,
 			mockAgentRepo,
+			mockTestRepo,
+			mockShardRepo,
 			mockAgentMgr,
 			queue,
 			nil,
@@ -482,6 +583,8 @@ func TestScheduler_matchAgent(t *testing.T) {
 		mockRunRepo := new(MockRunRepo)
 		mockServiceRepo := new(MockServiceRepo)
 		mockAgentRepo := new(MockAgentRepo)
+		mockTestRepo := new(MockTestRepo)
+		mockShardRepo := new(MockRunShardRepo)
 		mockAgentMgr := new(MockAgentManager)
 		queue := NewQueue(mockRunRepo)
 
@@ -489,6 +592,8 @@ func TestScheduler_matchAgent(t *testing.T) {
 			mockRunRepo,
 			mockServiceRepo,
 			mockAgentRepo,
+			mockTestRepo,
+			mockShardRepo,
 			mockAgentMgr,
 			queue,
 			nil,
@@ -516,6 +621,8 @@ func TestScheduler_matchAgent(t *testing.T) {
 		mockRunRepo := new(MockRunRepo)
 		mockServiceRepo := new(MockServiceRepo)
 		mockAgentRepo := new(MockAgentRepo)
+		mockTestRepo := new(MockTestRepo)
+		mockShardRepo := new(MockRunShardRepo)
 		mockAgentMgr := new(MockAgentManager)
 		queue := NewQueue(mockRunRepo)
 
@@ -523,6 +630,8 @@ func TestScheduler_matchAgent(t *testing.T) {
 			mockRunRepo,
 			mockServiceRepo,
 			mockAgentRepo,
+			mockTestRepo,
+			mockShardRepo,
 			mockAgentMgr,
 			queue,
 			nil,
@@ -548,6 +657,8 @@ func TestScheduler_matchAgent(t *testing.T) {
 		mockRunRepo := new(MockRunRepo)
 		mockServiceRepo := new(MockServiceRepo)
 		mockAgentRepo := new(MockAgentRepo)
+		mockTestRepo := new(MockTestRepo)
+		mockShardRepo := new(MockRunShardRepo)
 		mockAgentMgr := new(MockAgentManager)
 		queue := NewQueue(mockRunRepo)
 
@@ -555,6 +666,8 @@ func TestScheduler_matchAgent(t *testing.T) {
 			mockRunRepo,
 			mockServiceRepo,
 			mockAgentRepo,
+			mockTestRepo,
+			mockShardRepo,
 			mockAgentMgr,
 			queue,
 			nil,

@@ -20,6 +20,7 @@ import (
 	"github.com/conductor/conductor/internal/database"
 	"github.com/conductor/conductor/internal/git"
 	"github.com/conductor/conductor/internal/notification"
+	"github.com/conductor/conductor/internal/scheduler"
 	"github.com/conductor/conductor/internal/server"
 	"github.com/conductor/conductor/internal/websocket"
 	"github.com/conductor/conductor/internal/wire"
@@ -118,8 +119,14 @@ func main() {
 	artifactRepo := wire.NewArtifactRepositoryAdapter(repos.Artifacts)
 
 	// Create scheduler and git syncer
-	// TODO: Replace with real scheduler implementation
-	scheduler := &wire.NoopScheduler{}
+	workScheduler := scheduler.NewWorkScheduler(
+		repos.Runs,
+		repos.Services,
+		repos.TestDefinitions,
+		repos.RunShards,
+		slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})),
+	)
+	runScheduler := &wire.NoopScheduler{}
 
 	// Create git syncer (if configured)
 	gitSyncer, err := createGitSyncer(cfg, repos.TestDefinitions, logger)
@@ -189,14 +196,14 @@ func main() {
 		AgentService: server.AgentServiceDeps{
 			AgentRepo:        agentRepo,
 			RunRepo:          runRepo,
-			Scheduler:        scheduler,
+			Scheduler:        workScheduler,
 			HeartbeatTimeout: cfg.Agent.HeartbeatTimeout,
 			ServerVersion:    version,
 		},
 		RunService: server.RunServiceDeps{
 			RunRepo:     runRepo,
 			ServiceRepo: serviceRepo,
-			Scheduler:   scheduler,
+			Scheduler:   workScheduler,
 		},
 		ServiceService: server.ServiceRegistryDeps{
 			ServiceRepo: serviceRepo,
@@ -280,7 +287,7 @@ func main() {
 		webhookHandler := server.NewWebhookHandler(
 			webhookCfg,
 			webhookServiceRepo,
-			scheduler, // RunScheduler - currently NoopScheduler
+			runScheduler,
 			logger,
 		)
 		httpServer.SetWebhookHandler(webhookHandler)

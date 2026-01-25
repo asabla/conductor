@@ -904,19 +904,19 @@ func TestNoopScheduler(t *testing.T) {
 	})
 
 	t.Run("HandleWorkAccepted returns nil", func(t *testing.T) {
-		if err := scheduler.HandleWorkAccepted(ctx, uuid.New(), uuid.New()); err != nil {
+		if err := scheduler.HandleWorkAccepted(ctx, uuid.New(), uuid.New(), nil); err != nil {
 			t.Errorf("HandleWorkAccepted() error = %v", err)
 		}
 	})
 
 	t.Run("HandleWorkRejected returns nil", func(t *testing.T) {
-		if err := scheduler.HandleWorkRejected(ctx, uuid.New(), uuid.New(), "reason"); err != nil {
+		if err := scheduler.HandleWorkRejected(ctx, uuid.New(), uuid.New(), nil, "reason"); err != nil {
 			t.Errorf("HandleWorkRejected() error = %v", err)
 		}
 	})
 
 	t.Run("HandleRunComplete returns nil", func(t *testing.T) {
-		if err := scheduler.HandleRunComplete(ctx, uuid.New(), uuid.New(), nil); err != nil {
+		if err := scheduler.HandleRunComplete(ctx, uuid.New(), uuid.New(), nil, nil); err != nil {
 			t.Errorf("HandleRunComplete() error = %v", err)
 		}
 	})

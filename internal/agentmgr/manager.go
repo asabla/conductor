@@ -22,7 +22,7 @@ type AgentManager interface {
 	HandleHeartbeat(ctx context.Context, agentID uuid.UUID, status *HeartbeatStatus) error
 
 	// AssignWork dispatches a test run to an agent.
-	AssignWork(ctx context.Context, agentID uuid.UUID, run *database.TestRun) error
+	AssignWork(ctx context.Context, agentID uuid.UUID, run *database.TestRun, shard *database.RunShard, tests []database.TestDefinition) error
 
 	// CancelWork sends a cancellation request to an agent.
 	CancelWork(ctx context.Context, agentID uuid.UUID, runID uuid.UUID, reason string) error
@@ -104,6 +104,7 @@ func (a *AgentInfo) AvailableSlots() int {
 // WorkAssignment contains information about work to assign to an agent.
 type WorkAssignment struct {
 	Run         *database.TestRun
+	Shard       *database.RunShard
 	Service     *database.Service
 	Tests       []database.TestDefinition
 	Environment map[string]string
@@ -266,7 +267,7 @@ func (m *Manager) HandleHeartbeat(ctx context.Context, agentID uuid.UUID, status
 }
 
 // AssignWork dispatches a test run to an agent.
-func (m *Manager) AssignWork(ctx context.Context, agentID uuid.UUID, run *database.TestRun) error {
+func (m *Manager) AssignWork(ctx context.Context, agentID uuid.UUID, run *database.TestRun, shard *database.RunShard, tests []database.TestDefinition) error {
 	m.mu.RLock()
 	conn, ok := m.connections[agentID]
 	m.mu.RUnlock()
@@ -284,15 +285,18 @@ func (m *Manager) AssignWork(ctx context.Context, agentID uuid.UUID, run *databa
 		return fmt.Errorf("service not found: %s", run.ServiceID)
 	}
 
-	// Get test definitions for the service
-	tests, err := m.testRepo.ListByService(ctx, run.ServiceID, database.Pagination{Limit: 1000})
-	if err != nil {
-		return fmt.Errorf("failed to get test definitions: %w", err)
+	if len(tests) == 0 {
+		var err error
+		tests, err = m.testRepo.ListByService(ctx, run.ServiceID, database.Pagination{Limit: 1000})
+		if err != nil {
+			return fmt.Errorf("failed to get test definitions: %w", err)
+		}
 	}
 
 	// Build assignment
 	assignment := &WorkAssignment{
 		Run:     run,
+		Shard:   shard,
 		Service: service,
 		Tests:   tests,
 	}
@@ -300,6 +304,7 @@ func (m *Manager) AssignWork(ctx context.Context, agentID uuid.UUID, run *databa
 	m.logger.Info("assigning work to agent",
 		"agent_id", agentID,
 		"run_id", run.ID,
+		"shard_id", shardID(shard),
 		"service_id", run.ServiceID,
 		"test_count", len(tests),
 	)
@@ -381,6 +386,13 @@ func (m *Manager) UndrainAgent(ctx context.Context, agentID uuid.UUID) error {
 	m.mu.RUnlock()
 
 	return m.agentRepo.UpdateStatus(ctx, agentID, newStatus)
+}
+
+func shardID(shard *database.RunShard) string {
+	if shard == nil {
+		return ""
+	}
+	return shard.ID.String()
 }
 
 // GetAvailableAgents returns agents available to run work in the given zones.

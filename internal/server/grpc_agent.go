@@ -57,11 +57,11 @@ type WorkScheduler interface {
 	// CancelWork cancels an assigned work item.
 	CancelWork(ctx context.Context, runID uuid.UUID, reason string) error
 	// HandleWorkAccepted processes a work acceptance from an agent.
-	HandleWorkAccepted(ctx context.Context, agentID uuid.UUID, runID uuid.UUID) error
+	HandleWorkAccepted(ctx context.Context, agentID uuid.UUID, runID uuid.UUID, shardID *uuid.UUID) error
 	// HandleWorkRejected processes a work rejection from an agent.
-	HandleWorkRejected(ctx context.Context, agentID uuid.UUID, runID uuid.UUID, reason string) error
+	HandleWorkRejected(ctx context.Context, agentID uuid.UUID, runID uuid.UUID, shardID *uuid.UUID, reason string) error
 	// HandleRunComplete processes run completion from an agent.
-	HandleRunComplete(ctx context.Context, agentID uuid.UUID, runID uuid.UUID, result *conductorv1.RunComplete) error
+	HandleRunComplete(ctx context.Context, agentID uuid.UUID, runID uuid.UUID, shardID *uuid.UUID, result *conductorv1.RunComplete) error
 }
 
 // connectedAgent represents an agent with an active stream connection.
@@ -352,13 +352,19 @@ func (s *AgentServiceServer) handleWorkAccepted(ctx context.Context, agent *conn
 		return fmt.Errorf("invalid run ID: %w", err)
 	}
 
-	if err := s.deps.Scheduler.HandleWorkAccepted(ctx, agent.id, runID); err != nil {
+	shardID, err := parseOptionalUUID(wa.ShardId)
+	if err != nil {
+		return fmt.Errorf("invalid shard ID: %w", err)
+	}
+
+	if err := s.deps.Scheduler.HandleWorkAccepted(ctx, agent.id, runID, shardID); err != nil {
 		return fmt.Errorf("failed to handle work accepted: %w", err)
 	}
 
 	s.logger.Info().
 		Str("agent_id", agent.id.String()).
 		Str("run_id", wa.RunId).
+		Str("shard_id", wa.ShardId).
 		Msg("work accepted by agent")
 
 	// Send acknowledgement
@@ -385,13 +391,19 @@ func (s *AgentServiceServer) handleWorkRejected(ctx context.Context, agent *conn
 		return fmt.Errorf("invalid run ID: %w", err)
 	}
 
-	if err := s.deps.Scheduler.HandleWorkRejected(ctx, agent.id, runID, wr.Reason); err != nil {
+	shardID, err := parseOptionalUUID(wr.ShardId)
+	if err != nil {
+		return fmt.Errorf("invalid shard ID: %w", err)
+	}
+
+	if err := s.deps.Scheduler.HandleWorkRejected(ctx, agent.id, runID, shardID, wr.Reason); err != nil {
 		return fmt.Errorf("failed to handle work rejected: %w", err)
 	}
 
 	s.logger.Info().
 		Str("agent_id", agent.id.String()).
 		Str("run_id", wr.RunId).
+		Str("shard_id", wr.ShardId).
 		Str("reason", wr.Reason).
 		Bool("temporary", wr.Temporary).
 		Msg("work rejected by agent")
@@ -435,12 +447,18 @@ func (s *AgentServiceServer) handleResultStream(ctx context.Context, agent *conn
 			return fmt.Errorf("invalid run ID: %w", err)
 		}
 
-		if err := s.deps.Scheduler.HandleRunComplete(ctx, agent.id, runID, p.RunComplete); err != nil {
+		shardID, err := parseOptionalUUID(rs.ShardId)
+		if err != nil {
+			return fmt.Errorf("invalid shard ID: %w", err)
+		}
+
+		if err := s.deps.Scheduler.HandleRunComplete(ctx, agent.id, runID, shardID, p.RunComplete); err != nil {
 			return fmt.Errorf("failed to handle run complete: %w", err)
 		}
 
 		logger.Info().
 			Str("status", p.RunComplete.Status.String()).
+			Str("shard_id", rs.ShardId).
 			Int32("passed", p.RunComplete.Summary.GetPassed()).
 			Int32("failed", p.RunComplete.Summary.GetFailed()).
 			Msg("run completed")
@@ -475,6 +493,17 @@ func (s *AgentServiceServer) disconnectAgent(agentID uuid.UUID) {
 
 		s.logger.Info().Str("agent_id", agentID.String()).Msg("agent disconnected")
 	}
+}
+
+func parseOptionalUUID(value string) (*uuid.UUID, error) {
+	if value == "" {
+		return nil, nil
+	}
+	parsed, err := uuid.Parse(value)
+	if err != nil {
+		return nil, err
+	}
+	return &parsed, nil
 }
 
 // SendToAgent sends a control message to a connected agent.

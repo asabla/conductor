@@ -28,7 +28,7 @@ type ScheduleRequest struct {
 // AgentManager defines the interface for agent management operations.
 type AgentManager interface {
 	GetAvailableAgents(ctx context.Context, zones []string) ([]*AgentInfo, error)
-	AssignWork(ctx context.Context, agentID uuid.UUID, run *database.TestRun) error
+	AssignWork(ctx context.Context, agentID uuid.UUID, run *database.TestRun, shard *database.RunShard, tests []database.TestDefinition) error
 	CancelWork(ctx context.Context, agentID uuid.UUID, runID uuid.UUID, reason string) error
 }
 
@@ -74,6 +74,8 @@ type Scheduler struct {
 	runRepo     database.TestRunRepository
 	serviceRepo database.ServiceRepository
 	agentRepo   database.AgentRepository
+	testRepo    database.TestDefinitionRepository
+	shardRepo   database.RunShardRepository
 	agentMgr    AgentManager
 	queue       *Queue
 	logger      *slog.Logger
@@ -111,6 +113,8 @@ func NewScheduler(
 	runRepo database.TestRunRepository,
 	serviceRepo database.ServiceRepository,
 	agentRepo database.AgentRepository,
+	testRepo database.TestDefinitionRepository,
+	shardRepo database.RunShardRepository,
 	agentMgr AgentManager,
 	queue *Queue,
 	logger *slog.Logger,
@@ -127,6 +131,8 @@ func NewScheduler(
 		runRepo:      runRepo,
 		serviceRepo:  serviceRepo,
 		agentRepo:    agentRepo,
+		testRepo:     testRepo,
+		shardRepo:    shardRepo,
 		agentMgr:     agentMgr,
 		queue:        queue,
 		logger:       logger.With("component", "scheduler"),
@@ -415,11 +421,32 @@ func (s *Scheduler) processWorkItem(ctx context.Context, item *WorkItem) error {
 	}
 
 	// Verify run is still pending
-	if run.Status != database.RunStatusPending {
+	if run.Status != database.RunStatusPending && run.Status != database.RunStatusRunning {
 		s.logger.Debug("run no longer pending, removing from queue",
 			"run_id", item.RunID,
 			"status", run.Status,
 		)
+		return s.queue.Remove(ctx, item.RunID)
+	}
+
+	if s.testRepo == nil || s.shardRepo == nil {
+		return fmt.Errorf("scheduler missing test or shard repository")
+	}
+
+	// Load test definitions
+	tests, err := s.testRepo.ListByService(ctx, run.ServiceID, database.Pagination{Limit: 1000})
+	if err != nil {
+		return fmt.Errorf("failed to list test definitions: %w", err)
+	}
+
+	shards, shardTests, err := ensureShards(ctx, run, tests, s.shardRepo)
+	if err != nil {
+		return fmt.Errorf("failed to ensure shards: %w", err)
+	}
+
+	shard, shardTestList := nextPendingShard(shards, shardTests)
+	if shard == nil {
+		s.logger.Debug("no pending shards, removing from queue", "run_id", run.ID)
 		return s.queue.Remove(ctx, item.RunID)
 	}
 
@@ -431,27 +458,41 @@ func (s *Scheduler) processWorkItem(ctx context.Context, item *WorkItem) error {
 	}
 
 	// Assign work to agent
-	if err := s.agentMgr.AssignWork(ctx, agent.ID, run); err != nil {
+	if err := s.agentMgr.AssignWork(ctx, agent.ID, run, shard, shardTestList); err != nil {
 		return fmt.Errorf("failed to assign work to agent %s: %w", agent.ID, err)
 	}
 
 	// Update run status and agent assignment
-	if err := s.runRepo.Start(ctx, run.ID, agent.ID); err != nil {
-		// Work was assigned but we couldn't update the database
-		// Agent will handle this case
-		return fmt.Errorf("failed to start run: %w", err)
+	if run.Status == database.RunStatusPending {
+		if err := s.runRepo.Start(ctx, run.ID, agent.ID); err != nil {
+			// Work was assigned but we couldn't update the database
+			// Agent will handle this case
+			return fmt.Errorf("failed to start run: %w", err)
+		}
 	}
 
-	// Remove from queue
-	if err := s.queue.Remove(ctx, item.RunID); err != nil {
-		s.logger.Warn("failed to remove run from queue after assignment",
-			"run_id", item.RunID,
-			"error", err,
-		)
+	if err := s.shardRepo.Start(ctx, shard.ID, agent.ID); err != nil {
+		return fmt.Errorf("failed to start shard: %w", err)
+	}
+	for i := range shards {
+		if shards[i].ID == shard.ID {
+			shards[i].Status = database.ShardStatusRunning
+			break
+		}
+	}
+
+	if !hasPendingShards(shards) {
+		if err := s.queue.Remove(ctx, item.RunID); err != nil {
+			s.logger.Warn("failed to remove run from queue after assignment",
+				"run_id", item.RunID,
+				"error", err,
+			)
+		}
 	}
 
 	s.logger.Info("assigned run to agent",
 		"run_id", run.ID,
+		"shard_id", shard.ID,
 		"agent_id", agent.ID,
 		"agent_name", agent.Name,
 	)
