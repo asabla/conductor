@@ -85,12 +85,43 @@ func (r *runRepo) Update(ctx context.Context, run *TestRun) error {
 		run.PassedTests,
 		run.FailedTests,
 		run.SkippedTests,
+		run.ShardCount,
+		run.ShardsDone,
+		run.ShardsFailed,
+		run.MaxParallel,
 		run.DurationMs,
 		run.ErrorMessage,
 	)
 
 	if err != nil {
 		return fmt.Errorf("failed to update test run: %w", WrapDBError(err))
+	}
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// UpdateShardStats updates shard completion and result counts.
+func (r *runRepo) UpdateShardStats(ctx context.Context, id uuid.UUID, completed int, failed int, results RunResults) error {
+	var errorMsg *string
+	if results.ErrorMessage != "" {
+		errorMsg = &results.ErrorMessage
+	}
+
+	result, err := r.db.pool.Exec(ctx, RunUpdateShardStats,
+		id,
+		completed,
+		failed,
+		results.TotalTests,
+		results.PassedTests,
+		results.FailedTests,
+		results.SkippedTests,
+		results.DurationMs,
+		errorMsg,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update shard stats: %w", err)
 	}
 	if result.RowsAffected() == 0 {
 		return ErrNotFound

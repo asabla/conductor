@@ -126,17 +126,35 @@ func (w *WorkScheduler) HandleRunComplete(ctx context.Context, agentID uuid.UUID
 	}
 
 	if shardID != nil {
-		return w.finishShard(ctx, *shardID, result)
+		return w.finishShard(ctx, runID, *shardID, result)
 	}
 
 	return w.runRepo.Finish(ctx, runID, runStatusFromProto(result.Status), runResultsFromProto(result))
 }
 
-func (w *WorkScheduler) finishShard(ctx context.Context, shardID uuid.UUID, result *conductorv1.RunComplete) error {
+func (w *WorkScheduler) finishShard(ctx context.Context, runID uuid.UUID, shardID uuid.UUID, result *conductorv1.RunComplete) error {
 	status := shardStatusFromProto(result.Status)
 	if err := w.shardRepo.Finish(ctx, shardID, status, runResultsFromProto(result)); err != nil {
 		return fmt.Errorf("failed to finish shard: %w", err)
 	}
+
+	shards, err := w.shardRepo.ListByRun(ctx, runID)
+	if err != nil {
+		return fmt.Errorf("failed to list shards: %w", err)
+	}
+
+	completed, failed, results, finished := aggregateShardResults(shards)
+	if err := w.runRepo.UpdateShardStats(ctx, runID, completed, failed, results); err != nil {
+		return fmt.Errorf("failed to update run shard stats: %w", err)
+	}
+
+	if finished {
+		status := runStatusFromShardStatus(shards)
+		if err := w.runRepo.Finish(ctx, runID, status, results); err != nil {
+			return fmt.Errorf("failed to finish run: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -283,12 +301,72 @@ func runResultsFromProto(result *conductorv1.RunComplete) database.RunResults {
 		return database.RunResults{}
 	}
 
+	durationMs := int64(result.Summary.Duration.GetSeconds()*1000) + int64(result.Summary.Duration.GetNanos()/1e6)
+
 	return database.RunResults{
 		TotalTests:   int(result.Summary.Total),
 		PassedTests:  int(result.Summary.Passed),
 		FailedTests:  int(result.Summary.Failed),
 		SkippedTests: int(result.Summary.Skipped),
-		DurationMs:   int64(result.Summary.Duration.GetSeconds() * 1000),
+		DurationMs:   durationMs,
 		ErrorMessage: result.ErrorMessage,
 	}
+}
+
+func aggregateShardResults(shards []database.RunShard) (completed int, failed int, results database.RunResults, finished bool) {
+	finished = true
+
+	for _, shard := range shards {
+		switch shard.Status {
+		case database.ShardStatusPending, database.ShardStatusRunning:
+			finished = false
+			continue
+		default:
+			completed++
+		}
+
+		if shard.Status == database.ShardStatusFailed || shard.Status == database.ShardStatusError || shard.Status == database.ShardStatusCancelled {
+			failed++
+			if results.ErrorMessage == "" && shard.ErrorMessage != nil {
+				results.ErrorMessage = *shard.ErrorMessage
+			}
+		}
+
+		results.TotalTests += shard.TotalTests
+		results.PassedTests += shard.PassedTests
+		results.FailedTests += shard.FailedTests
+		results.SkippedTests += shard.SkippedTests
+	}
+
+	return completed, failed, results, finished
+}
+
+func runStatusFromShardStatus(shards []database.RunShard) database.RunStatus {
+	var hasFailed bool
+	var hasError bool
+	var hasCancelled bool
+
+	for _, shard := range shards {
+		switch shard.Status {
+		case database.ShardStatusError:
+			hasError = true
+		case database.ShardStatusFailed:
+			hasFailed = true
+		case database.ShardStatusCancelled:
+			hasCancelled = true
+		case database.ShardStatusPending, database.ShardStatusRunning:
+			return database.RunStatusRunning
+		}
+	}
+
+	if hasError {
+		return database.RunStatusError
+	}
+	if hasFailed {
+		return database.RunStatusFailed
+	}
+	if hasCancelled {
+		return database.RunStatusCancelled
+	}
+	return database.RunStatusPassed
 }

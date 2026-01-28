@@ -117,6 +117,9 @@ type TestRunRepository interface {
 	// Finish marks a run as finished with results.
 	Finish(ctx context.Context, id uuid.UUID, status RunStatus, results RunResults) error
 
+	// UpdateShardStats updates shard completion and result counts.
+	UpdateShardStats(ctx context.Context, id uuid.UUID, completed int, failed int, results RunResults) error
+
 	// List returns test runs with pagination.
 	List(ctx context.Context, page Pagination) ([]TestRun, error)
 

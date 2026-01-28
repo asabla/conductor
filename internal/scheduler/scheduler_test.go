@@ -51,6 +51,11 @@ func (m *MockRunRepo) Finish(ctx context.Context, id uuid.UUID, status database.
 	return args.Error(0)
 }
 
+func (m *MockRunRepo) UpdateShardStats(ctx context.Context, id uuid.UUID, completed int, failed int, results database.RunResults) error {
+	args := m.Called(ctx, id, completed, failed, results)
+	return args.Error(0)
+}
+
 func (m *MockRunRepo) List(ctx context.Context, page database.Pagination) ([]database.TestRun, error) {
 	args := m.Called(ctx, page)
 	return args.Get(0).([]database.TestRun), args.Error(1)

@@ -240,7 +240,16 @@ const (
 		UPDATE test_runs
 		SET agent_id = $2, status = $3, started_at = $4, finished_at = $5,
 			total_tests = $6, passed_tests = $7, failed_tests = $8, skipped_tests = $9,
-			duration_ms = $10, error_message = $11
+			shard_count = $10, shards_completed = $11, shards_failed = $12,
+			max_parallel_tests = $13, duration_ms = $14, error_message = $15
+		WHERE id = $1`
+
+	// RunUpdateShardStats updates shard completion and counts.
+	RunUpdateShardStats = `
+		UPDATE test_runs
+		SET shards_completed = $2, shards_failed = $3,
+			total_tests = $4, passed_tests = $5, failed_tests = $6, skipped_tests = $7,
+			duration_ms = $8, error_message = $9
 		WHERE id = $1`
 
 	// RunUpdateStatus updates only the run's status.
