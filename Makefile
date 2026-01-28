@@ -1,3 +1,5 @@
+.DEFAULT_GOAL := help
+
 .PHONY: all build test lint clean proto run-control-plane run-agent \
 	docker-build docker-build-dashboard docker-build-all \
 	docker-up docker-up-build docker-down docker-down-clean \
@@ -232,6 +234,13 @@ help:
 	@echo ""
 	@echo "Usage:"
 	@echo "  make <target>"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make docker-up             # Start the dev stack"
+	@echo "  make docker-logs           # Follow service logs"
+	@echo "  make build                 # Build all binaries"
+	@echo "  make test                  # Run Go tests"
+	@echo "  make dashboard-dev         # Run dashboard dev server"
 	@echo ""
 	@echo "Build Targets:"
 	@echo "  build                    Build all binaries"
