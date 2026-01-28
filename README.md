@@ -65,6 +65,9 @@ docker compose up -d
 # Or via Makefile
 make docker-up
 
+# Dev auth bypass (optional)
+export VITE_AUTH_DISABLED=true
+
 # Access the dashboard
 open http://localhost:3000
 ```

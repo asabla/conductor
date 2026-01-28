@@ -333,6 +333,7 @@ services:
       # API endpoint for the dashboard
       VITE_API_URL: ${DASHBOARD_API_URL:-http://localhost:8080}
       VITE_WS_URL: ${DASHBOARD_WS_URL:-ws://localhost:8080}
+      VITE_AUTH_DISABLED: ${VITE_AUTH_DISABLED:-true}
     ports:
       - "${DASHBOARD_PORT:-3000}:80"
     healthcheck:
