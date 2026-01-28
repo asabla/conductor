@@ -146,7 +146,7 @@ services:
       context: .
       dockerfile: Dockerfile.control-plane
       args:
-        GO_VERSION: "1.22"
+        GO_VERSION: "1.24"
     image: conductor/control-plane:${VERSION:-dev}
     container_name: conductor-control-plane
     hostname: control-plane
@@ -241,7 +241,7 @@ services:
       context: .
       dockerfile: Dockerfile.agent
       args:
-        GO_VERSION: "1.22"
+        GO_VERSION: "1.24"
     image: conductor/agent:${VERSION:-dev}
     hostname: "agent-{{.Task.Slot}}"
     restart: unless-stopped

@@ -354,6 +354,8 @@ export function RunDetailsPage() {
 
   const run = runData;
   const shards = run.shards || [];
+  const shardTotal = run.shardCount ?? (shards.length || 0);
+  const shardTotalLabel = shardTotal > 0 ? shardTotal : "—";
 
   return (
     <div className="space-y-6">
@@ -505,7 +507,7 @@ export function RunDetailsPage() {
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Shards</span>
               <span className="text-sm font-medium">
-                {run.shardCount ?? shards.length || "—"}
+                {shardTotalLabel}
               </span>
             </div>
             <div className="flex items-center justify-between">

@@ -46,7 +46,7 @@ fi
 # Set bucket policy for authenticated read access
 # This allows agents and control plane to read/write artifacts
 echo "Setting bucket policy..."
-cat > /tmp/bucket-policy.json << 'EOF'
+cat > /tmp/bucket-policy.json << EOF
 {
     "Version": "2012-10-17",
     "Statement": [
@@ -58,7 +58,7 @@ cat > /tmp/bucket-policy.json << 'EOF'
                 "s3:ListBucket",
                 "s3:ListBucketMultipartUploads"
             ],
-            "Resource": ["arn:aws:s3:::BUCKET_NAME"]
+            "Resource": ["arn:aws:s3:::${BUCKET_NAME}"]
         },
         {
             "Effect": "Allow",
@@ -70,14 +70,11 @@ cat > /tmp/bucket-policy.json << 'EOF'
                 "s3:ListMultipartUploadParts",
                 "s3:AbortMultipartUpload"
             ],
-            "Resource": ["arn:aws:s3:::BUCKET_NAME/*"]
+            "Resource": ["arn:aws:s3:::${BUCKET_NAME}/*"]
         }
     ]
 }
 EOF
-
-# Replace placeholder with actual bucket name
-sed -i "s/BUCKET_NAME/${BUCKET_NAME}/g" /tmp/bucket-policy.json
 
 # Apply the policy
 mc anonymous set-json /tmp/bucket-policy.json "${MINIO_ALIAS}/${BUCKET_NAME}"
