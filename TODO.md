@@ -119,3 +119,24 @@
 - [x] Flaky test detection and quarantine
 - [x] Test analytics dashboards
 - [x] Secret management integration (Vault, etc.)
+
+## Next Phase (New)
+
+### Priority 1: Sharding UX + APIs
+- [x] Expose shard status and shard results in RunService APIs
+- [x] Update dashboard run details to show shard breakdown
+- [x] Add shard-aware cancellation and retry endpoints
+
+### Priority 2: Flaky Operations
+- [ ] Add UI controls to quarantine/unquarantine tests
+- [ ] Add notification for newly quarantined tests
+- [ ] Add admin endpoint to override flakiness thresholds
+
+### Priority 3: Reliability + Ops
+- [ ] Add background job for pruning test_history
+- [ ] Add structured metrics for shard completion and flaky detection
+- [ ] Add integration tests for shard aggregation
+
+### Priority 4: Security + Access
+- [ ] Add per-agent access scopes for secrets providers
+- [ ] Add audit log entries for secret access and quarantine actions

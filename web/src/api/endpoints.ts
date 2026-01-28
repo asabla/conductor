@@ -10,6 +10,7 @@ import type {
   Artifact,
   DashboardStats,
   RunHistoryPoint,
+  RunShard,
 } from "@/types/models";
 import type {
   PaginatedResponse,
@@ -125,6 +126,7 @@ export interface RunDetails extends TestRun {
   labels: Record<string, string>;
   retryOfRunId?: string;
   retryCount: number;
+  shards?: RunShard[];
 }
 
 export interface RunWithResults extends RunDetails {
@@ -187,11 +189,13 @@ export interface CreateRunRequest {
 
 export interface CancelRunRequest {
   reason?: string;
+  shardId?: string;
 }
 
 export interface RetryRunRequest {
   failedOnly?: boolean;
   environmentOverride?: Record<string, string>;
+  shardId?: string;
 }
 
 export interface ServiceFilterParams {
@@ -307,15 +311,21 @@ export const dashboardApi = {
 export const runsApi = {
   list: (params?: TestRunFilterParams) =>
     get<PaginatedResponse<TestRun>>(endpoints.runs.list, params as Record<string, unknown>),
-  get: (id: string, includeResults = false, includeArtifacts = false) =>
+  get: (
+    id: string,
+    includeResults = false,
+    includeArtifacts = false,
+    includeShards = false
+  ) =>
     get<RunWithResults>(endpoints.runs.get(id), {
       includeResults,
       includeArtifacts,
+      includeShards,
     }),
   create: (data: CreateRunRequest) =>
     post<{ run: RunDetails }>(endpoints.runs.create, data),
-  cancel: (id: string, reason?: string) =>
-    post<{ run: RunDetails }>(endpoints.runs.cancel(id), { reason }),
+  cancel: (id: string, reason?: string, shardId?: string) =>
+    post<{ run: RunDetails }>(endpoints.runs.cancel(id), { reason, shardId }),
   retry: (id: string, data?: RetryRunRequest) =>
     post<{ run: RunDetails; originalRunId: string }>(
       endpoints.runs.retry(id),

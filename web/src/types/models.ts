@@ -41,9 +41,29 @@ export interface TestRun {
   passedTests: number;
   failedTests: number;
   skippedTests: number;
+  shardCount?: number;
+  shardsCompleted?: number;
+  shardsFailed?: number;
+  maxParallelTests?: number;
   errorMessage?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface RunShard {
+  id: string;
+  runId: string;
+  shardIndex: number;
+  shardCount: number;
+  status: TestRunStatus;
+  agentId?: string;
+  totalTests: number;
+  passedTests: number;
+  failedTests: number;
+  skippedTests: number;
+  errorMessage?: string;
+  startedAt?: string;
+  finishedAt?: string;
 }
 
 /**

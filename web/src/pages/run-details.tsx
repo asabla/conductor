@@ -229,6 +229,7 @@ export function RunDetailsPage() {
     {
       includeResults: false,
       includeArtifacts: false,
+      includeShards: true,
       refetchInterval: 5000,
     }
   );
@@ -352,6 +353,7 @@ export function RunDetailsPage() {
   }
 
   const run = runData;
+  const shards = run.shards || [];
 
   return (
     <div className="space-y-6">
@@ -493,7 +495,74 @@ export function RunDetailsPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Shard Summary */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Shard Summary</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Shards</span>
+              <span className="text-sm font-medium">
+                {run.shardCount ?? shards.length || "—"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Completed</span>
+              <span className="text-sm font-medium">
+                {run.shardsCompleted ?? 0}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Failed</span>
+              <span className="text-sm font-medium text-destructive">
+                {run.shardsFailed ?? 0}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Parallel Tests</span>
+              <span className="text-sm font-medium">
+                {run.maxParallelTests ? run.maxParallelTests : "Default"}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
       </div>
+
+      {shards.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Shard Breakdown</CardTitle>
+            <CardDescription>Shard-level execution status and results</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {shards.map((shard) => (
+                <div
+                  key={shard.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-full bg-muted px-2 py-1 text-xs font-medium">
+                      Shard {shard.shardIndex + 1} / {shard.shardCount}
+                    </div>
+                    {getStatusBadge(shard.status)}
+                  </div>
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <span>
+                      {shard.passedTests}/{shard.totalTests} passed
+                    </span>
+                    <span>{shard.failedTests} failed</span>
+                    <span>{shard.skippedTests} skipped</span>
+                    <span>Agent: {shard.agentId ? shard.agentId.slice(0, 8) : "—"}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Error Message */}
       {run.errorMessage && (

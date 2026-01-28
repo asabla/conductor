@@ -203,9 +203,10 @@ func main() {
 			ServerVersion:    version,
 		},
 		RunService: server.RunServiceDeps{
-			RunRepo:     runRepo,
-			ServiceRepo: serviceRepo,
-			Scheduler:   workScheduler,
+			RunRepo:      runRepo,
+			RunShardRepo: repos.RunShards,
+			ServiceRepo:  serviceRepo,
+			Scheduler:    workScheduler,
 		},
 		ServiceService: server.ServiceRegistryDeps{
 			ServiceRepo: serviceRepo,

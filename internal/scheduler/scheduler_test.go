@@ -327,6 +327,11 @@ func (m *MockRunShardRepo) Finish(ctx context.Context, id uuid.UUID, status data
 	return args.Error(0)
 }
 
+func (m *MockRunShardRepo) Reset(ctx context.Context, id uuid.UUID) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
 func (m *MockRunShardRepo) DeleteByRun(ctx context.Context, runID uuid.UUID) error {
 	args := m.Called(ctx, runID)
 	return args.Error(0)

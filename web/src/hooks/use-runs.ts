@@ -59,6 +59,7 @@ export function useRun(
   options?: {
     includeResults?: boolean;
     includeArtifacts?: boolean;
+    includeShards?: boolean;
     enabled?: boolean;
     refetchInterval?: number | false;
   }
@@ -66,13 +67,14 @@ export function useRun(
   const {
     includeResults = false,
     includeArtifacts = false,
+    includeShards = false,
     enabled = true,
     refetchInterval,
   } = options ?? {};
 
   return useQuery({
     queryKey: runKeys.detail(id!),
-    queryFn: () => runsApi.get(id!, includeResults, includeArtifacts),
+    queryFn: () => runsApi.get(id!, includeResults, includeArtifacts, includeShards),
     enabled: !!id && enabled,
     refetchInterval,
   });
@@ -169,8 +171,15 @@ export function useCancelRun() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ runId, reason }: { runId: string; reason?: string }) =>
-      runsApi.cancel(runId, reason),
+    mutationFn: ({
+      runId,
+      reason,
+      shardId,
+    }: {
+      runId: string;
+      reason?: string;
+      shardId?: string;
+    }) => runsApi.cancel(runId, reason, shardId),
     onSuccess: (data) => {
       // Update the specific run in cache
       queryClient.setQueryData(runKeys.detail(data.run.id), data.run);

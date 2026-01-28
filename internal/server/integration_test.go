@@ -956,6 +956,35 @@ func (m *mockRunRepository) UpdateStatus(ctx context.Context, id uuid.UUID, stat
 	return fmt.Errorf("run not found: %s", id)
 }
 
+func (m *mockRunRepository) Finish(ctx context.Context, id uuid.UUID, status database.RunStatus, results database.RunResults) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if run, ok := m.runs[id]; ok {
+		run.Status = status
+		run.TotalTests = results.TotalTests
+		run.PassedTests = results.PassedTests
+		run.FailedTests = results.FailedTests
+		run.SkippedTests = results.SkippedTests
+		return nil
+	}
+	return fmt.Errorf("run not found: %s", id)
+}
+
+func (m *mockRunRepository) UpdateShardStats(ctx context.Context, id uuid.UUID, completed int, failed int, results database.RunResults) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if run, ok := m.runs[id]; ok {
+		run.ShardsDone = completed
+		run.ShardsFailed = failed
+		run.TotalTests = results.TotalTests
+		run.PassedTests = results.PassedTests
+		run.FailedTests = results.FailedTests
+		run.SkippedTests = results.SkippedTests
+		return nil
+	}
+	return fmt.Errorf("run not found: %s", id)
+}
+
 // mockWorkScheduler implements WorkScheduler for testing.
 type mockWorkScheduler struct{}
 

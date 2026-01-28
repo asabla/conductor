@@ -223,6 +223,9 @@ type RunShardRepository interface {
 	// Finish marks a shard as finished with counts.
 	Finish(ctx context.Context, id uuid.UUID, status ShardStatus, results RunResults) error
 
+	// Reset resets a shard for retry.
+	Reset(ctx context.Context, id uuid.UUID) error
+
 	// DeleteByRun deletes shard records for a run.
 	DeleteByRun(ctx context.Context, runID uuid.UUID) error
 }

@@ -459,6 +459,15 @@ const (
 			error_message = $7
 		WHERE id = $1`
 
+	// RunShardReset resets a shard for retry.
+	RunShardReset = `
+		UPDATE run_shards
+		SET status = 'pending', agent_id = NULL,
+			started_at = NULL, finished_at = NULL,
+			passed_tests = 0, failed_tests = 0, skipped_tests = 0,
+			error_message = NULL
+		WHERE id = $1`
+
 	// RunShardDeleteByRun deletes shards for a run.
 	RunShardDeleteByRun = `DELETE FROM run_shards WHERE run_id = $1`
 )

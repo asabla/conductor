@@ -18,6 +18,8 @@ import (
 type RunServiceDeps struct {
 	// RunRepo handles run persistence.
 	RunRepo RunRepository
+	// RunShardRepo handles shard persistence.
+	RunShardRepo RunShardRepository
 	// ServiceRepo handles service persistence.
 	ServiceRepo ServiceRepository
 	// Scheduler handles work scheduling.
@@ -31,6 +33,16 @@ type RunRepository interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*database.TestRun, error)
 	List(ctx context.Context, filter RunFilter, pagination database.Pagination) ([]*database.TestRun, int, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status database.RunStatus, errorMsg *string) error
+	Finish(ctx context.Context, id uuid.UUID, status database.RunStatus, results database.RunResults) error
+	UpdateShardStats(ctx context.Context, id uuid.UUID, completed int, failed int, results database.RunResults) error
+}
+
+// RunShardRepository defines the interface for run shard persistence.
+type RunShardRepository interface {
+	ListByRun(ctx context.Context, runID uuid.UUID) ([]database.RunShard, error)
+	UpdateStatus(ctx context.Context, id uuid.UUID, status database.ShardStatus) error
+	Finish(ctx context.Context, id uuid.UUID, status database.ShardStatus, results database.RunResults) error
+	Reset(ctx context.Context, id uuid.UUID) error
 }
 
 // RunFilter defines filtering options for listing runs.
@@ -145,6 +157,14 @@ func (s *RunServiceServer) GetRun(ctx context.Context, req *conductorv1.GetRunRe
 		Run: runToProto(run, service),
 	}
 
+	if req.IncludeShards && s.deps.RunShardRepo != nil {
+		shards, err := s.deps.RunShardRepo.ListByRun(ctx, runID)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to list shards: %v", err)
+		}
+		resp.Shards = runShardsToProto(shards)
+	}
+
 	// TODO: Include results and artifacts if requested
 
 	return resp, nil
@@ -227,6 +247,10 @@ func (s *RunServiceServer) CancelRun(ctx context.Context, req *conductorv1.Cance
 		return nil, status.Errorf(codes.InvalidArgument, "invalid run ID: %v", err)
 	}
 
+	if req.ShardId != "" {
+		return s.cancelShard(ctx, runID, req.ShardId, req.Reason)
+	}
+
 	run, err := s.deps.RunRepo.GetByID(ctx, runID)
 	if err != nil {
 		if database.IsNotFound(err) {
@@ -269,6 +293,10 @@ func (s *RunServiceServer) RetryRun(ctx context.Context, req *conductorv1.RetryR
 	originalRunID, err := uuid.Parse(req.RunId)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid run ID: %v", err)
+	}
+
+	if req.ShardId != "" {
+		return s.retryShard(ctx, originalRunID, req.ShardId)
 	}
 
 	originalRun, err := s.deps.RunRepo.GetByID(ctx, originalRunID)
@@ -382,6 +410,11 @@ func runToProto(run *database.TestRun, service *database.Service) *conductorv1.R
 		Skipped: int32(run.SkippedTests),
 	}
 
+	protoRun.ShardCount = int32(run.ShardCount)
+	protoRun.ShardsCompleted = int32(run.ShardsDone)
+	protoRun.ShardsFailed = int32(run.ShardsFailed)
+	protoRun.MaxParallelTests = int32(run.MaxParallel)
+
 	return protoRun
 }
 
@@ -422,6 +455,193 @@ func runStatusFromProto(status conductorv1.RunStatus) database.RunStatus {
 		return database.RunStatusTimeout
 	case conductorv1.RunStatus_RUN_STATUS_CANCELLED:
 		return database.RunStatusCancelled
+	default:
+		return database.RunStatusPending
+	}
+}
+
+func (s *RunServiceServer) cancelShard(ctx context.Context, runID uuid.UUID, shardID string, reason string) (*conductorv1.CancelRunResponse, error) {
+	if s.deps.RunShardRepo == nil {
+		return nil, status.Error(codes.FailedPrecondition, "shard repository not configured")
+	}
+
+	parsed, err := uuid.Parse(shardID)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid shard ID: %v", err)
+	}
+
+	results := database.RunResults{ErrorMessage: reason}
+	if err := s.deps.RunShardRepo.Finish(ctx, parsed, database.ShardStatusCancelled, results); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to cancel shard: %v", err)
+	}
+
+	if err := s.updateRunFromShards(ctx, runID); err != nil {
+		return nil, err
+	}
+
+	run, _ := s.deps.RunRepo.GetByID(ctx, runID)
+	service, _ := s.deps.ServiceRepo.GetByID(ctx, run.ServiceID)
+
+	return &conductorv1.CancelRunResponse{Run: runToProto(run, service)}, nil
+}
+
+func (s *RunServiceServer) retryShard(ctx context.Context, runID uuid.UUID, shardID string) (*conductorv1.RetryRunResponse, error) {
+	if s.deps.RunShardRepo == nil {
+		return nil, status.Error(codes.FailedPrecondition, "shard repository not configured")
+	}
+
+	parsed, err := uuid.Parse(shardID)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid shard ID: %v", err)
+	}
+
+	if err := s.deps.RunShardRepo.Reset(ctx, parsed); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to reset shard: %v", err)
+	}
+
+	run, _ := s.deps.RunRepo.GetByID(ctx, runID)
+	service, _ := s.deps.ServiceRepo.GetByID(ctx, run.ServiceID)
+
+	return &conductorv1.RetryRunResponse{
+		Run:           runToProto(run, service),
+		OriginalRunId: runID.String(),
+	}, nil
+}
+
+func (s *RunServiceServer) updateRunFromShards(ctx context.Context, runID uuid.UUID) error {
+	if s.deps.RunShardRepo == nil {
+		return nil
+	}
+
+	shards, err := s.deps.RunShardRepo.ListByRun(ctx, runID)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to list shards: %v", err)
+	}
+
+	completed, failed, results, finished := aggregateShardResults(shards)
+	if err := s.deps.RunRepo.UpdateShardStats(ctx, runID, completed, failed, results); err != nil {
+		return status.Errorf(codes.Internal, "failed to update shard stats: %v", err)
+	}
+
+	if finished {
+		statusVal := runStatusFromShardStatus(shards)
+		if err := s.deps.RunRepo.Finish(ctx, runID, statusVal, results); err != nil {
+			return status.Errorf(codes.Internal, "failed to finish run: %v", err)
+		}
+	}
+
+	return nil
+}
+
+func runShardsToProto(shards []database.RunShard) []*conductorv1.RunShard {
+	protoShards := make([]*conductorv1.RunShard, 0, len(shards))
+	for _, shard := range shards {
+		protoShards = append(protoShards, runShardToProto(shard))
+	}
+	return protoShards
+}
+
+func runShardToProto(shard database.RunShard) *conductorv1.RunShard {
+	protoShard := &conductorv1.RunShard{
+		Id:         shard.ID.String(),
+		RunId:      shard.RunID.String(),
+		ShardIndex: int32(shard.ShardIndex),
+		ShardCount: int32(shard.ShardCount),
+		Status:     runStatusToProto(runStatusFromShardStatusValue(shard.Status)),
+		Summary: &conductorv1.RunSummary{
+			Total:   int32(shard.TotalTests),
+			Passed:  int32(shard.PassedTests),
+			Failed:  int32(shard.FailedTests),
+			Skipped: int32(shard.SkippedTests),
+		},
+	}
+
+	if shard.AgentID != nil {
+		protoShard.AgentId = shard.AgentID.String()
+	}
+	if shard.ErrorMessage != nil {
+		protoShard.ErrorMessage = *shard.ErrorMessage
+	}
+	if shard.StartedAt != nil {
+		protoShard.StartedAt = timestamppb.New(*shard.StartedAt)
+	}
+	if shard.FinishedAt != nil {
+		protoShard.FinishedAt = timestamppb.New(*shard.FinishedAt)
+	}
+
+	return protoShard
+}
+
+func aggregateShardResults(shards []database.RunShard) (completed int, failed int, results database.RunResults, finished bool) {
+	finished = true
+
+	for _, shard := range shards {
+		switch shard.Status {
+		case database.ShardStatusPending, database.ShardStatusRunning:
+			finished = false
+			continue
+		default:
+			completed++
+		}
+
+		if shard.Status == database.ShardStatusFailed || shard.Status == database.ShardStatusError || shard.Status == database.ShardStatusCancelled {
+			failed++
+			if results.ErrorMessage == "" && shard.ErrorMessage != nil {
+				results.ErrorMessage = *shard.ErrorMessage
+			}
+		}
+
+		results.TotalTests += shard.TotalTests
+		results.PassedTests += shard.PassedTests
+		results.FailedTests += shard.FailedTests
+		results.SkippedTests += shard.SkippedTests
+	}
+
+	return completed, failed, results, finished
+}
+
+func runStatusFromShardStatus(shards []database.RunShard) database.RunStatus {
+	var hasFailed bool
+	var hasError bool
+	var hasCancelled bool
+
+	for _, shard := range shards {
+		switch shard.Status {
+		case database.ShardStatusError:
+			hasError = true
+		case database.ShardStatusFailed:
+			hasFailed = true
+		case database.ShardStatusCancelled:
+			hasCancelled = true
+		case database.ShardStatusPending, database.ShardStatusRunning:
+			return database.RunStatusRunning
+		}
+	}
+
+	if hasError {
+		return database.RunStatusError
+	}
+	if hasFailed {
+		return database.RunStatusFailed
+	}
+	if hasCancelled {
+		return database.RunStatusCancelled
+	}
+	return database.RunStatusPassed
+}
+
+func runStatusFromShardStatusValue(status database.ShardStatus) database.RunStatus {
+	switch status {
+	case database.ShardStatusPassed:
+		return database.RunStatusPassed
+	case database.ShardStatusFailed:
+		return database.RunStatusFailed
+	case database.ShardStatusError:
+		return database.RunStatusError
+	case database.ShardStatusCancelled:
+		return database.RunStatusCancelled
+	case database.ShardStatusRunning:
+		return database.RunStatusRunning
 	default:
 		return database.RunStatusPending
 	}

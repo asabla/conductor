@@ -137,6 +137,8 @@ message GetRunRequest {
   bool include_results = 2;
   // Whether to include artifacts in the response.
   bool include_artifacts = 3;
+  // Whether to include shard details in the response.
+  bool include_shards = 4;
 }
 
 // GetRunResponse returns the requested run.
@@ -147,6 +149,8 @@ message GetRunResponse {
   repeated RunTestResult results = 2;
   // Artifacts if requested.
   repeated RunArtifact artifacts = 3;
+  // Shards if requested.
+  repeated RunShard shards = 4;
 }
 
 // ListRunsRequest specifies filtering and pagination for listing runs.
@@ -203,6 +207,8 @@ message CancelRunRequest {
   string run_id = 1;
   // Reason for cancellation.
   string reason = 2;
+  // Optional shard ID to cancel.
+  string shard_id = 3;
 }
 
 // CancelRunResponse confirms the cancellation.
@@ -219,6 +225,8 @@ message RetryRunRequest {
   bool failed_only = 2;
   // Override environment variables.
   map<string, string> environment_override = 3;
+  // Optional shard ID to retry.
+  string shard_id = 4;
 }
 
 // RetryRunResponse returns the new run.
@@ -313,6 +321,38 @@ message Run {
   string retry_of_run_id = 17;
   // Number of retry attempts.
   int32 retry_count = 18;
+  // Total shards configured for the run.
+  int32 shard_count = 19;
+  // Shards completed for the run.
+  int32 shards_completed = 20;
+  // Shards failed for the run.
+  int32 shards_failed = 21;
+  // Max parallel tests per shard.
+  int32 max_parallel_tests = 22;
+}
+
+// RunShard represents a shard of a test run.
+message RunShard {
+  // Unique identifier.
+  string id = 1;
+  // Run this shard belongs to.
+  string run_id = 2;
+  // Shard index (zero-based).
+  int32 shard_index = 3;
+  // Total number of shards.
+  int32 shard_count = 4;
+  // Shard status.
+  RunStatus status = 5;
+  // Agent executing this shard.
+  string agent_id = 6;
+  // Summary of test results.
+  RunSummary summary = 7;
+  // Error message if failed.
+  string error_message = 8;
+  // When the shard started.
+  google.protobuf.Timestamp started_at = 9;
+  // When the shard finished.
+  google.protobuf.Timestamp finished_at = 10;
 }
 
 // RunTestResult represents the outcome of a single test in a run response.
@@ -346,6 +386,8 @@ message RunTestResult {
   string system_out = 13;
   // System error captured during test.
   string system_err = 14;
+  // Shard ID for this result.
+  string shard_id = 15;
 }
 
 // RunArtifact is a file produced during test execution for run responses.

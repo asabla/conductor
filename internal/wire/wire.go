@@ -159,6 +159,14 @@ func (a *RunRepositoryAdapter) UpdateStatus(ctx context.Context, id uuid.UUID, s
 	return a.repo.Update(ctx, run)
 }
 
+func (a *RunRepositoryAdapter) Finish(ctx context.Context, id uuid.UUID, status database.RunStatus, results database.RunResults) error {
+	return a.repo.Finish(ctx, id, status, results)
+}
+
+func (a *RunRepositoryAdapter) UpdateShardStats(ctx context.Context, id uuid.UUID, completed int, failed int, results database.RunResults) error {
+	return a.repo.UpdateShardStats(ctx, id, completed, failed, results)
+}
+
 // ServiceRepositoryAdapter adapts database.ServiceRepository to server.FullServiceRepository.
 type ServiceRepositoryAdapter struct {
 	repo database.ServiceRepository

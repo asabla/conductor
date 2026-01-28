@@ -157,6 +157,18 @@ func (r *runShardRepo) Finish(ctx context.Context, id uuid.UUID, status ShardSta
 	return nil
 }
 
+// Reset resets a shard for retry.
+func (r *runShardRepo) Reset(ctx context.Context, id uuid.UUID) error {
+	result, err := r.db.pool.Exec(ctx, RunShardReset, id)
+	if err != nil {
+		return fmt.Errorf("failed to reset shard: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // DeleteByRun deletes shards for a run.
 func (r *runShardRepo) DeleteByRun(ctx context.Context, runID uuid.UUID) error {
 	_, err := r.db.pool.Exec(ctx, RunShardDeleteByRun, runID)

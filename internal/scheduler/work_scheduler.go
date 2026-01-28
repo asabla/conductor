@@ -53,7 +53,14 @@ func (w *WorkScheduler) AssignWork(ctx context.Context, agentID uuid.UUID, capab
 		return nil, fmt.Errorf("failed to list pending runs: %w", err)
 	}
 
-	for _, run := range pendingRuns {
+	runningRuns, err := w.runRepo.GetRunning(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list running runs: %w", err)
+	}
+
+	runs := append(pendingRuns, runningRuns...)
+
+	for _, run := range runs {
 		service, err := w.serviceRepo.Get(ctx, run.ServiceID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get service: %w", err)
