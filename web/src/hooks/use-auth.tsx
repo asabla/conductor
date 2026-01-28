@@ -34,6 +34,16 @@ interface AuthContextValue extends AuthState {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+const AUTH_DISABLED =
+  import.meta.env.DEV &&
+  (import.meta.env.VITE_AUTH_DISABLED as string | undefined) !== "false";
+const DEV_USER: User = {
+  id: "dev-user",
+  email: "dev@conductor.local",
+  name: "Dev User",
+  roles: ["admin"],
+};
+
 interface AuthProviderProps {
   children: ReactNode;
 }
@@ -52,6 +62,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [config, setConfig] = useState<AuthConfig | null>(null);
   const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isRefreshingRef = useRef(false);
+
+  const authDisabled = AUTH_DISABLED;
+  const devUser = DEV_USER;
 
   /**
    * Schedule token refresh before expiration
@@ -140,6 +153,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
     async function initAuth() {
       try {
+        if (authDisabled) {
+          setState({
+            user: devUser,
+            isAuthenticated: true,
+            isLoading: false,
+            error: null,
+          });
+          return;
+        }
         // Load auth config
         const authConfig = await getAuthConfig();
         if (!mounted) return;
@@ -222,13 +244,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
         clearTimeout(refreshTimeoutRef.current);
       }
     };
-  }, [scheduleTokenRefresh, performTokenRefresh]);
+  }, [scheduleTokenRefresh, performTokenRefresh, authDisabled, devUser]);
 
   /**
    * Redirect to OIDC provider for login
    */
   const login = useCallback(
     async (returnTo?: string) => {
+      if (authDisabled) {
+        setState({
+          user: devUser,
+          isAuthenticated: true,
+          isLoading: false,
+          error: null,
+        });
+        return;
+      }
       if (!config) {
         throw new Error("Auth config not loaded");
       }
@@ -247,13 +278,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
         throw error;
       }
     },
-    [config]
+    [config, authDisabled, devUser]
   );
 
   /**
    * Handle OIDC callback - exchange code for tokens
    */
   const handleCallback = useCallback(async (): Promise<string> => {
+    if (authDisabled) {
+      setState({
+        user: devUser,
+        isAuthenticated: true,
+        isLoading: false,
+        error: null,
+      });
+      return "/";
+    }
     if (!config) {
       throw new Error("Auth config not loaded");
     }
@@ -327,12 +367,22 @@ export function AuthProvider({ children }: AuthProviderProps) {
       }));
       throw error;
     }
-  }, [config, scheduleTokenRefresh, performTokenRefresh]);
+  }, [config, scheduleTokenRefresh, performTokenRefresh, authDisabled, devUser]);
 
   /**
    * Logout - clear tokens and redirect to IdP logout
    */
   const logout = useCallback(() => {
+    if (authDisabled) {
+      TokenStorage.clearTokens();
+      setState({
+        user: null,
+        isAuthenticated: false,
+        isLoading: false,
+        error: null,
+      });
+      return Promise.resolve();
+    }
     if (!config) {
       // Clear local state even without config
       TokenStorage.clearTokens();
@@ -368,29 +418,35 @@ export function AuthProvider({ children }: AuthProviderProps) {
     const logoutUrl = buildLogoutUrl(config, idToken);
     window.location.href = logoutUrl;
     return Promise.resolve();
-  }, [config]);
+  }, [config, authDisabled]);
 
   /**
    * Manual token refresh
    */
   const refreshTokenFn = useCallback(async () => {
+    if (authDisabled) {
+      return;
+    }
     if (!config) {
       throw new Error("Auth config not loaded");
     }
 
     await performTokenRefresh(config);
-  }, [config, performTokenRefresh]);
+  }, [config, performTokenRefresh, authDisabled]);
 
   /**
    * Get current access token (for API requests)
    */
   const getAccessTokenFn = useCallback((): string | null => {
+    if (authDisabled) {
+      return null;
+    }
     const tokens = TokenStorage.getTokens();
     if (!tokens || isAccessTokenExpired(tokens)) {
       return null;
     }
     return tokens.accessToken;
-  }, []);
+  }, [authDisabled]);
 
   const value: AuthContextValue = {
     ...state,
