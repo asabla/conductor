@@ -322,6 +322,7 @@ services:
       dockerfile: Dockerfile.dashboard
       args:
         NODE_VERSION: "20"
+        VITE_AUTH_DISABLED: ${VITE_AUTH_DISABLED:-true}
     image: conductor/dashboard:${VERSION:-dev}
     container_name: conductor-dashboard
     hostname: dashboard

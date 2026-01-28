@@ -35,7 +35,6 @@ interface AuthContextValue extends AuthState {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 const AUTH_DISABLED =
-  import.meta.env.DEV &&
   (import.meta.env.VITE_AUTH_DISABLED as string | undefined) !== "false";
 const DEV_USER: User = {
   id: "dev-user",
