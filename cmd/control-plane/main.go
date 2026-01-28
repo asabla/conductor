@@ -196,6 +196,8 @@ func main() {
 		AgentService: server.AgentServiceDeps{
 			AgentRepo:        agentRepo,
 			RunRepo:          runRepo,
+			ResultRepo:       repos.Results,
+			AnalyticsRepo:    repos.Analytics,
 			Scheduler:        workScheduler,
 			HeartbeatTimeout: cfg.Agent.HeartbeatTimeout,
 			ServerVersion:    version,

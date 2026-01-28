@@ -116,6 +116,6 @@
 - [x] Bitbucket support
 - [x] Test parallelization within runs
 - [x] Test sharding across agents
-- [ ] Flaky test detection and quarantine
+- [x] Flaky test detection and quarantine
 - [x] Test analytics dashboards
 - [x] Secret management integration (Vault, etc.)

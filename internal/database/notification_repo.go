@@ -557,6 +557,18 @@ func (r *analyticsRepo) QuarantineTest(ctx context.Context, id uuid.UUID, by str
 	return nil
 }
 
+// QuarantineTestByName quarantines a flaky test by service and name.
+func (r *analyticsRepo) QuarantineTestByName(ctx context.Context, serviceID uuid.UUID, testName string, by string) error {
+	result, err := r.db.pool.Exec(ctx, FlakyTestQuarantineByName, serviceID, testName, by)
+	if err != nil {
+		return fmt.Errorf("failed to quarantine test: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // UnquarantineTest removes quarantine from a test.
 func (r *analyticsRepo) UnquarantineTest(ctx context.Context, id uuid.UUID) error {
 	result, err := r.db.pool.Exec(ctx, FlakyTestUnquarantine, id)

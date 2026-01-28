@@ -307,6 +307,9 @@ type AnalyticsRepository interface {
 	// QuarantineTest quarantines a flaky test.
 	QuarantineTest(ctx context.Context, id uuid.UUID, by string) error
 
+	// QuarantineTestByName quarantines a flaky test by service and name.
+	QuarantineTestByName(ctx context.Context, serviceID uuid.UUID, testName string, by string) error
+
 	// UnquarantineTest removes quarantine from a test.
 	UnquarantineTest(ctx context.Context, id uuid.UUID) error
 

@@ -645,6 +645,12 @@ const (
 		SET quarantined = true, quarantined_at = NOW(), quarantined_by = $2
 		WHERE id = $1`
 
+	// FlakyTestQuarantineByName quarantines a flaky test by name.
+	FlakyTestQuarantineByName = `
+		UPDATE flaky_tests
+		SET quarantined = true, quarantined_at = NOW(), quarantined_by = $3
+		WHERE service_id = $1 AND test_name = $2`
+
 	// FlakyTestUnquarantine removes quarantine from a flaky test.
 	FlakyTestUnquarantine = `
 		UPDATE flaky_tests

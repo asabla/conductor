@@ -23,6 +23,10 @@ type AgentServiceDeps struct {
 	AgentRepo AgentRepository
 	// RunRepo handles run persistence.
 	RunRepo RunRepository
+	// ResultRepo handles test result persistence.
+	ResultRepo AgentResultRepository
+	// AnalyticsRepo handles test history and flakiness.
+	AnalyticsRepo AgentAnalyticsRepository
 	// Scheduler handles work assignment.
 	Scheduler WorkScheduler
 	// HeartbeatTimeout is the duration after which an agent is considered offline.
@@ -40,6 +44,19 @@ type AgentRepository interface {
 	UpdateStatus(ctx context.Context, id uuid.UUID, status database.AgentStatus) error
 	List(ctx context.Context, filter AgentFilter, pagination database.Pagination) ([]*database.Agent, int, error)
 	Delete(ctx context.Context, id uuid.UUID) error
+}
+
+// ResultRepository defines the interface for storing test results.
+type AgentResultRepository interface {
+	Create(ctx context.Context, result *database.TestResult) error
+}
+
+// AgentAnalyticsRepository defines the interface for flaky test tracking.
+type AgentAnalyticsRepository interface {
+	RecordTestHistory(ctx context.Context, history *database.TestHistory) error
+	GetTestHistory(ctx context.Context, serviceID uuid.UUID, testName string, limit int) ([]database.TestHistory, error)
+	UpsertFlakyTest(ctx context.Context, serviceID uuid.UUID, testName string, score float64, runs, flakyRuns int) error
+	QuarantineTestByName(ctx context.Context, serviceID uuid.UUID, testName string, by string) error
 }
 
 // AgentFilter defines filtering options for listing agents.
@@ -432,7 +449,9 @@ func (s *AgentServiceServer) handleResultStream(ctx context.Context, agent *conn
 			Str("test_name", p.TestResult.TestName).
 			Str("status", p.TestResult.Status.String()).
 			Msg("test result received")
-		// TODO: Store test result
+		if err := s.handleTestResult(ctx, rs, p.TestResult); err != nil {
+			logger.Error().Err(err).Msg("failed to handle test result")
+		}
 
 	case *conductorv1.ResultStream_Artifact:
 		logger.Info().
@@ -504,6 +523,134 @@ func parseOptionalUUID(value string) (*uuid.UUID, error) {
 		return nil, err
 	}
 	return &parsed, nil
+}
+
+func (s *AgentServiceServer) handleTestResult(ctx context.Context, rs *conductorv1.ResultStream, event *conductorv1.TestResultEvent) error {
+	if event == nil {
+		return nil
+	}
+
+	runID, err := uuid.Parse(rs.RunId)
+	if err != nil {
+		return fmt.Errorf("invalid run ID: %w", err)
+	}
+
+	shardID, err := parseOptionalUUID(rs.ShardId)
+	if err != nil {
+		return fmt.Errorf("invalid shard ID: %w", err)
+	}
+
+	var testDefID *uuid.UUID
+	if event.TestId != "" {
+		parsed, err := uuid.Parse(event.TestId)
+		if err == nil {
+			testDefID = &parsed
+		}
+	}
+
+	status := resultStatusFromProto(event.Status)
+	durationMs := durationToMillis(event.Duration)
+
+	if s.deps.ResultRepo != nil {
+		result := &database.TestResult{
+			RunID:            runID,
+			ShardID:          shardID,
+			TestDefinitionID: testDefID,
+			TestName:         event.TestName,
+			Status:           status,
+			DurationMs:       durationMs,
+		}
+		if event.ErrorMessage != "" {
+			result.ErrorMessage = &event.ErrorMessage
+		}
+		if event.StackTrace != "" {
+			result.StackTrace = &event.StackTrace
+		}
+		if err := s.deps.ResultRepo.Create(ctx, result); err != nil {
+			s.logger.Warn().Err(err).Str("run_id", rs.RunId).Msg("failed to store test result")
+		}
+	}
+
+	if s.deps.AnalyticsRepo == nil || s.deps.RunRepo == nil {
+		return nil
+	}
+
+	run, err := s.deps.RunRepo.GetByID(ctx, runID)
+	if err != nil || run == nil {
+		return nil
+	}
+
+	if err := s.deps.AnalyticsRepo.RecordTestHistory(ctx, &database.TestHistory{
+		ServiceID:  run.ServiceID,
+		TestName:   event.TestName,
+		RunID:      runID,
+		Status:     status,
+		DurationMs: durationMs,
+	}); err != nil {
+		s.logger.Warn().Err(err).Msg("failed to record test history")
+		return nil
+	}
+
+	history, err := s.deps.AnalyticsRepo.GetTestHistory(ctx, run.ServiceID, event.TestName, 20)
+	if err != nil || len(history) == 0 {
+		return nil
+	}
+
+	flakyRuns := 0
+	for _, record := range history {
+		if isFlakyStatus(record.Status) {
+			flakyRuns++
+		}
+	}
+
+	totalRuns := len(history)
+	flakiness := float64(flakyRuns) / float64(totalRuns)
+
+	if err := s.deps.AnalyticsRepo.UpsertFlakyTest(ctx, run.ServiceID, event.TestName, flakiness, 1, boolToInt(isFlakyStatus(status))); err != nil {
+		s.logger.Warn().Err(err).Msg("failed to upsert flaky test")
+	}
+
+	if totalRuns >= 10 && flakiness >= 0.5 {
+		if err := s.deps.AnalyticsRepo.QuarantineTestByName(ctx, run.ServiceID, event.TestName, "system"); err != nil {
+			s.logger.Warn().Err(err).Msg("failed to quarantine flaky test")
+		}
+	}
+
+	return nil
+}
+
+func resultStatusFromProto(status conductorv1.TestStatus) database.ResultStatus {
+	switch status {
+	case conductorv1.TestStatus_TEST_STATUS_PASS:
+		return database.ResultStatusPass
+	case conductorv1.TestStatus_TEST_STATUS_FAIL:
+		return database.ResultStatusFail
+	case conductorv1.TestStatus_TEST_STATUS_SKIP:
+		return database.ResultStatusSkip
+	case conductorv1.TestStatus_TEST_STATUS_ERROR:
+		return database.ResultStatusError
+	default:
+		return database.ResultStatusError
+	}
+}
+
+func durationToMillis(duration *conductorv1.Duration) *int64 {
+	if duration == nil {
+		return nil
+	}
+	ms := duration.Seconds*1000 + int64(duration.Nanos/1e6)
+	return &ms
+}
+
+func isFlakyStatus(status database.ResultStatus) bool {
+	return status == database.ResultStatusFail || status == database.ResultStatusError
+}
+
+func boolToInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 // SendToAgent sends a control message to a connected agent.
