@@ -56,8 +56,14 @@ A distributed test orchestration platform that coordinates test execution across
 git clone https://github.com/conductor/conductor.git
 cd conductor
 
+# (Optional) Copy default environment config
+cp .env.example .env
+
 # Start all services
 docker compose up -d
+
+# Or via Makefile
+make docker-up
 
 # Access the dashboard
 open http://localhost:3000

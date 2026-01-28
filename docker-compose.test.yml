@@ -97,23 +97,24 @@ services:
       CONDUCTOR_LOG_FORMAT: json
       
       # Test database
-      DATABASE_URL: postgres://conductor_test:test_secret@postgres:5432/conductor_test?sslmode=disable
-      DATABASE_MAX_CONNECTIONS: 10
-      DATABASE_MAX_IDLE_CONNECTIONS: 2
+      CONDUCTOR_DATABASE_URL: postgres://conductor_test:test_secret@postgres:5432/conductor_test?sslmode=disable
+      CONDUCTOR_DATABASE_MAX_OPEN_CONNS: 10
+      CONDUCTOR_DATABASE_MAX_IDLE_CONNS: 2
       
       # Test storage
-      ARTIFACT_STORAGE_ACCESS_KEY: conductor_test
-      ARTIFACT_STORAGE_SECRET_KEY: test_secret
-      ARTIFACT_STORAGE_BUCKET: conductor-test-artifacts
+      CONDUCTOR_STORAGE_ENDPOINT: http://minio:9000
+      CONDUCTOR_STORAGE_ACCESS_KEY_ID: conductor_test
+      CONDUCTOR_STORAGE_SECRET_ACCESS_KEY: test_secret
+      CONDUCTOR_STORAGE_BUCKET: conductor-test-artifacts
       
       # Test security
-      JWT_SECRET: test-jwt-secret-not-for-production
-      AGENT_TOKEN_SECRET: test-agent-secret-not-for-production
+      CONDUCTOR_AUTH_JWT_SECRET: test-jwt-secret-not-for-production
+      CONDUCTOR_AGENT_TOKEN_SECRET: test-agent-secret-not-for-production
       
       # Faster timeouts for tests
-      SCHEDULER_POLL_INTERVAL: 1s
-      AGENT_HEARTBEAT_TIMEOUT: 30s
-      AGENT_DRAIN_TIMEOUT: 30s
+      CONDUCTOR_SCHEDULER_POLL_INTERVAL: 1s
+      CONDUCTOR_AGENT_HEARTBEAT_TIMEOUT: 30s
+      CONDUCTOR_AGENT_DRAIN_TIMEOUT: 30s
       
       # Test mode flags
       CONDUCTOR_TEST_MODE: "true"
@@ -141,14 +142,19 @@ services:
   agent:
     container_name: conductor-agent-test
     environment:
-      AGENT_NAME: test-agent
-      AGENT_LABELS: env=test,platform=linux
-      AGENT_TOKEN: test-agent-token
-      CONTROL_PLANE_URL: control-plane:9090
-      AGENT_MAX_CONCURRENT_TESTS: 2
-      AGENT_DEFAULT_TEST_TIMEOUT: 5m
-      AGENT_HEARTBEAT_INTERVAL: 10s
-      AGENT_LOG_LEVEL: warn
+      CONDUCTOR_AGENT_NAME: test-agent
+      CONDUCTOR_AGENT_LABELS: env=test,platform=linux
+      CONDUCTOR_AGENT_TOKEN: test-agent-token
+      CONDUCTOR_AGENT_CONTROL_PLANE_URL: control-plane:9090
+      CONDUCTOR_AGENT_MAX_PARALLEL: 2
+      CONDUCTOR_AGENT_DEFAULT_TIMEOUT: 5m
+      CONDUCTOR_AGENT_HEARTBEAT_INTERVAL: 10s
+      CONDUCTOR_AGENT_LOG_LEVEL: warn
+      CONDUCTOR_AGENT_STORAGE_ENDPOINT: http://minio:9000
+      CONDUCTOR_AGENT_STORAGE_ACCESS_KEY: conductor_test
+      CONDUCTOR_AGENT_STORAGE_SECRET_KEY: test_secret
+      CONDUCTOR_AGENT_STORAGE_BUCKET: conductor-test-artifacts
+      CONDUCTOR_AGENT_STORAGE_USE_SSL: "false"
       CONDUCTOR_TEST_MODE: "true"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
