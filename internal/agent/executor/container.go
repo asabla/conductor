@@ -140,46 +140,8 @@ func (e *ContainerExecutor) Execute(ctx context.Context, req *ExecutionRequest, 
 		Duration:    0,
 	}
 
-	for i, test := range req.Tests {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-		}
-
-		progress := int(float64(i+1)/float64(len(req.Tests))*70) + 20 // 20-90%
-		if err := reporter.ReportProgress(ctx, req.RunID, req.ShardID, "testing", fmt.Sprintf("Running test: %s", test.Name), progress, i, len(req.Tests)); err != nil {
-			e.logger.Warn().Err(err).Msg("Failed to report progress")
-		}
-
-		testResult := e.executeTest(ctx, req.RunID, req.ShardID, containerID, test, reporter)
-		result.TestResults = append(result.TestResults, testResult)
-
-		// Update summary
-		switch testResult.Status {
-		case conductorv1.TestStatus_TEST_STATUS_PASS:
-			result.Summary.Passed++
-		case conductorv1.TestStatus_TEST_STATUS_FAIL:
-			result.Summary.Failed++
-		case conductorv1.TestStatus_TEST_STATUS_SKIP:
-			result.Summary.Skipped++
-		case conductorv1.TestStatus_TEST_STATUS_ERROR:
-			result.Summary.Errored++
-		}
-
-		// Report test result
-		if err := reporter.ReportTestResult(ctx, req.RunID, req.ShardID, &conductorv1.TestResultEvent{
-			TestId:       test.TestId,
-			TestName:     testResult.TestName,
-			Status:       testResult.Status,
-			Duration:     durationToProto(testResult.Duration),
-			ErrorMessage: testResult.ErrorMessage,
-			StackTrace:   testResult.StackTrace,
-			RetryAttempt: int32(testResult.RetryAttempt),
-			Metadata:     testResult.Metadata,
-		}); err != nil {
-			e.logger.Warn().Err(err).Msg("Failed to report test result")
-		}
+	if err := e.executeTests(ctx, req, containerID, reporter, result); err != nil {
+		return nil, err
 	}
 
 	// Run teardown commands
@@ -366,6 +328,111 @@ func (e *ContainerExecutor) executeTest(ctx context.Context, runID, shardID, con
 	}
 
 	return lastResult
+}
+
+func (e *ContainerExecutor) executeTests(ctx context.Context, req *ExecutionRequest, containerID string, reporter ResultReporter, result *ExecutionResult) error {
+	maxParallel := req.MaxParallelTests
+	if maxParallel <= 0 {
+		maxParallel = 1
+	}
+	if maxParallel > len(req.Tests) {
+		maxParallel = len(req.Tests)
+	}
+
+	if maxParallel <= 1 {
+		for i, test := range req.Tests {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
+
+			progress := int(float64(i+1)/float64(len(req.Tests))*70) + 20
+			if err := reporter.ReportProgress(ctx, req.RunID, req.ShardID, "testing", fmt.Sprintf("Running test: %s", test.Name), progress, i, len(req.Tests)); err != nil {
+				e.logger.Warn().Err(err).Msg("Failed to report progress")
+			}
+
+			testResult := e.executeTest(ctx, req.RunID, req.ShardID, containerID, test, reporter)
+			result.TestResults = append(result.TestResults, testResult)
+			e.updateSummary(result, testResult)
+			if err := reportTestResult(ctx, reporter, req, test, testResult); err != nil {
+				e.logger.Warn().Err(err).Msg("Failed to report test result")
+			}
+		}
+		return nil
+	}
+
+	type job struct {
+		index int
+		test  *conductorv1.TestToRun
+	}
+	type jobResult struct {
+		test   *conductorv1.TestToRun
+		result *TestResult
+	}
+
+	jobs := make(chan job)
+	results := make(chan jobResult)
+
+	var wg sync.WaitGroup
+	for i := 0; i < maxParallel; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range jobs {
+				if ctx.Err() != nil {
+					return
+				}
+				res := e.executeTest(ctx, req.RunID, req.ShardID, containerID, j.test, reporter)
+				select {
+				case results <- jobResult{test: j.test, result: res}:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
+
+	go func() {
+		for i, test := range req.Tests {
+			jobs <- job{index: i, test: test}
+		}
+		close(jobs)
+		wg.Wait()
+		close(results)
+	}()
+
+	completed := 0
+	for res := range results {
+		completed++
+		result.TestResults = append(result.TestResults, res.result)
+		e.updateSummary(result, res.result)
+		progress := int(float64(completed)/float64(len(req.Tests))*70) + 20
+		if err := reporter.ReportProgress(ctx, req.RunID, req.ShardID, "testing", fmt.Sprintf("Completed test: %s", res.test.Name), progress, completed, len(req.Tests)); err != nil {
+			e.logger.Warn().Err(err).Msg("Failed to report progress")
+		}
+		if err := reportTestResult(ctx, reporter, req, res.test, res.result); err != nil {
+			e.logger.Warn().Err(err).Msg("Failed to report test result")
+		}
+	}
+
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return nil
+}
+
+func (e *ContainerExecutor) updateSummary(result *ExecutionResult, testResult *TestResult) {
+	switch testResult.Status {
+	case conductorv1.TestStatus_TEST_STATUS_PASS:
+		result.Summary.Passed++
+	case conductorv1.TestStatus_TEST_STATUS_FAIL:
+		result.Summary.Failed++
+	case conductorv1.TestStatus_TEST_STATUS_SKIP:
+		result.Summary.Skipped++
+	case conductorv1.TestStatus_TEST_STATUS_ERROR:
+		result.Summary.Errored++
+	}
 }
 
 // runTestInContainer executes a single test command inside the container.

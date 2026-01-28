@@ -114,7 +114,7 @@
 ### Future Enhancements
 - [x] GitLab support
 - [x] Bitbucket support
-- [ ] Test parallelization within runs
+- [x] Test parallelization within runs
 - [x] Test sharding across agents
 - [ ] Flaky test detection and quarantine
 - [x] Test analytics dashboards

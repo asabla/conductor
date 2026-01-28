@@ -60,6 +60,9 @@ type ExecutionRequest struct {
 
 	// Timeout for the entire execution.
 	Timeout time.Duration
+
+	// MaxParallelTests controls how many tests to run concurrently.
+	MaxParallelTests int
 }
 
 // ExecutionResult contains the results of test execution.

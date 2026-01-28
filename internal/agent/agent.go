@@ -601,6 +601,7 @@ func (a *Agent) processWork(ctx context.Context, work *conductorv1.AssignWork, l
 		SetupCommands:    work.SetupCommands,
 		TeardownCommands: work.TeardownCommands,
 		ContainerImage:   work.ContainerImage,
+		MaxParallelTests: int(work.MaxParallelTests),
 		Timeout:          a.config.DefaultTimeout,
 	}
 
