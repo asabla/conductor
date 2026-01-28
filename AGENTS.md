@@ -158,6 +158,16 @@ conductor/
 └── docs/                 # Documentation
 ```
 
+## OpenCode Subagents
+
+Project-specific subagents live in `.opencode/agents/` and can be invoked during development:
+
+- `backend-go` - Go backend, gRPC services, database ops
+- `frontend-react` - React/TypeScript dashboard UI
+- `proto-api` - Protocol buffers and API design
+- `devops` - Docker/Kubernetes and infrastructure
+- `testing` - Unit/integration/E2E coverage
+
 ## Key Implementation Notes
 
 - **Agents connect outbound**: No inbound firewall rules required in private networks
