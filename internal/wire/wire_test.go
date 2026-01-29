@@ -263,6 +263,18 @@ func (m *mockTestRunRepository) Finish(ctx context.Context, id uuid.UUID, status
 	return nil
 }
 
+func (m *mockTestRunRepository) UpdateShardStats(ctx context.Context, id uuid.UUID, shardCount int, shardsFailed int, results database.RunResults) error {
+	if r, ok := m.runs[id]; ok {
+		r.ShardCount = shardCount
+		r.ShardsFailed = shardsFailed
+		r.TotalTests = results.TotalTests
+		r.PassedTests = results.PassedTests
+		r.FailedTests = results.FailedTests
+		r.SkippedTests = results.SkippedTests
+	}
+	return nil
+}
+
 func (m *mockTestRunRepository) GetPending(ctx context.Context, limit int) ([]database.TestRun, error) {
 	return m.ListByStatus(ctx, database.RunStatusPending, database.Pagination{Limit: limit})
 }

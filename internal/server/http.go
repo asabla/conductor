@@ -198,6 +198,7 @@ func (s *HTTPServer) registerHandlers(ctx context.Context, conn *grpc.ClientConn
 		conductorv1.RegisterServiceRegistryServiceHandler,
 		conductorv1.RegisterAgentManagementServiceHandler,
 		conductorv1.RegisterResultServiceHandler,
+		conductorv1.RegisterNotificationServiceHandler,
 		conductorv1.RegisterHealthServiceHandler,
 	}
 

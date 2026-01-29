@@ -247,6 +247,9 @@ func (m *mockTestRunRepository) Start(ctx context.Context, id uuid.UUID, agentID
 func (m *mockTestRunRepository) Finish(ctx context.Context, id uuid.UUID, status database.RunStatus, results database.RunResults) error {
 	return nil
 }
+func (m *mockTestRunRepository) UpdateShardStats(ctx context.Context, id uuid.UUID, shardCount int, shardsFailed int, results database.RunResults) error {
+	return nil
+}
 func (m *mockTestRunRepository) List(ctx context.Context, p database.Pagination) ([]database.TestRun, error) {
 	return nil, nil
 }
