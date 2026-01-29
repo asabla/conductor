@@ -2,10 +2,11 @@
  * Tests for TestResultsTable component
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { TestResultsTable, TestResultRow, TestStatus } from "./test-results-table";
+import { TestResultsTable } from "./test-results-table";
+import type { TestResultRow } from "./test-results-table";
 
 // =============================================================================
 // Mock Data Factory

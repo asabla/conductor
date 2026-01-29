@@ -17,11 +17,6 @@ describe("AgentsPage", () => {
   it("shows correct counts in summary cards", () => {
     render(<AgentsPage />);
 
-    // Get all summary cards by their container structure
-    const summaryCards = screen
-      .getAllByRole("heading", { level: 3 })
-      .map((heading) => heading.closest(".rounded-lg"));
-
     // Total Agents: 6
     expect(screen.getByText("Total Agents")).toBeInTheDocument();
 

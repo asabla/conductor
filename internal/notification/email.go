@@ -401,7 +401,7 @@ func (c *EmailChannel) getStatusColor(notificationType NotificationType) string 
 		return "#36a64f"
 	case NotificationTypeRunFailed, NotificationTypeRunError, NotificationTypeRunTimeout:
 		return "#dc3545"
-	case NotificationTypeFlakyDetected:
+	case NotificationTypeFlakyDetected, NotificationTypeTestQuarantined:
 		return "#ffc107"
 	default:
 		return "#17a2b8"

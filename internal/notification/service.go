@@ -504,6 +504,16 @@ func (s *Service) createNotificationFromEvent(event *Event) *Notification {
 		}
 	}
 
+	if event.FlakyTest != nil {
+		vars.TestName = event.FlakyTest.TestName
+		vars.FlakinessScore = event.FlakyTest.FlakinessScore
+		vars.FlakyRuns = event.FlakyTest.FlakyRuns
+		vars.TotalRuns = event.FlakyTest.TotalRuns
+		if event.FlakyTest.QuarantinedBy != nil {
+			vars.QuarantinedBy = *event.FlakyTest.QuarantinedBy
+		}
+	}
+
 	title, message := GetTemplateForType(event.Type, vars)
 
 	notification := &Notification{

@@ -194,13 +194,15 @@ func main() {
 	// Create service dependencies with real repositories
 	services := server.Services{
 		AgentService: server.AgentServiceDeps{
-			AgentRepo:        agentRepo,
-			RunRepo:          runRepo,
-			ResultRepo:       repos.Results,
-			AnalyticsRepo:    repos.Analytics,
-			Scheduler:        workScheduler,
-			HeartbeatTimeout: cfg.Agent.HeartbeatTimeout,
-			ServerVersion:    version,
+			AgentRepo:           agentRepo,
+			RunRepo:             runRepo,
+			ResultRepo:          repos.Results,
+			AnalyticsRepo:       repos.Analytics,
+			ServiceRepo:         serviceRepo,
+			NotificationService: notificationService,
+			Scheduler:           workScheduler,
+			HeartbeatTimeout:    cfg.Agent.HeartbeatTimeout,
+			ServerVersion:       version,
 		},
 		RunService: server.RunServiceDeps{
 			RunRepo:      runRepo,

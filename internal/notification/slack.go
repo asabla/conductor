@@ -402,7 +402,7 @@ func (c *SlackChannel) getColor(notificationType NotificationType) string {
 		return "#36a64f" // Green
 	case NotificationTypeRunFailed, NotificationTypeRunError, NotificationTypeRunTimeout:
 		return "#dc3545" // Red
-	case NotificationTypeFlakyDetected:
+	case NotificationTypeFlakyDetected, NotificationTypeTestQuarantined:
 		return "#ffc107" // Yellow/Warning
 	case NotificationTypeRunStarted:
 		return "#17a2b8" // Blue/Info

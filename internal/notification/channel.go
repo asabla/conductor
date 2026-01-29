@@ -25,6 +25,8 @@ const (
 	NotificationTypeRunRecovered NotificationType = "run_recovered"
 	// NotificationTypeFlakyDetected indicates a flaky test was detected.
 	NotificationTypeFlakyDetected NotificationType = "flaky_detected"
+	// NotificationTypeTestQuarantined indicates a test was quarantined.
+	NotificationTypeTestQuarantined NotificationType = "test_quarantined"
 	// NotificationTypeRunTimeout indicates a test run timed out.
 	NotificationTypeRunTimeout NotificationType = "run_timeout"
 	// NotificationTypeRunError indicates a test run encountered an error.
@@ -133,6 +135,8 @@ func mapTriggerEvent(nt NotificationType) database.TriggerEvent {
 	case NotificationTypeRunRecovered:
 		return database.TriggerEventRecovery
 	case NotificationTypeFlakyDetected:
+		return database.TriggerEventFlaky
+	case NotificationTypeTestQuarantined:
 		return database.TriggerEventFlaky
 	default:
 		return database.TriggerEventAlways

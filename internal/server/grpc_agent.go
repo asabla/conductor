@@ -15,6 +15,7 @@ import (
 
 	conductorv1 "github.com/conductor/conductor/api/gen/conductor/v1"
 	"github.com/conductor/conductor/internal/database"
+	"github.com/conductor/conductor/internal/notification"
 )
 
 // AgentServiceDeps defines the dependencies for the agent service.
@@ -27,6 +28,10 @@ type AgentServiceDeps struct {
 	ResultRepo AgentResultRepository
 	// AnalyticsRepo handles test history and flakiness.
 	AnalyticsRepo AgentAnalyticsRepository
+	// ServiceRepo handles service lookups.
+	ServiceRepo ServiceRepository
+	// NotificationService handles outbound notifications.
+	NotificationService notification.NotificationService
 	// Scheduler handles work assignment.
 	Scheduler WorkScheduler
 	// HeartbeatTimeout is the duration after which an agent is considered offline.
@@ -613,10 +618,50 @@ func (s *AgentServiceServer) handleTestResult(ctx context.Context, rs *conductor
 	if totalRuns >= 10 && flakiness >= 0.5 {
 		if err := s.deps.AnalyticsRepo.QuarantineTestByName(ctx, run.ServiceID, event.TestName, "system"); err != nil {
 			s.logger.Warn().Err(err).Msg("failed to quarantine flaky test")
+		} else {
+			s.notifyTestQuarantined(ctx, run, event.TestName, flakiness, flakyRuns, totalRuns)
 		}
 	}
 
 	return nil
+}
+
+func (s *AgentServiceServer) notifyTestQuarantined(ctx context.Context, run *database.TestRun, testName string, flakinessScore float64, flakyRuns int, totalRuns int) {
+	if s.deps.NotificationService == nil {
+		return
+	}
+
+	serviceName := "Unknown Service"
+	if s.deps.ServiceRepo != nil {
+		service, err := s.deps.ServiceRepo.GetByID(ctx, run.ServiceID)
+		if err != nil {
+			s.logger.Warn().Err(err).Msg("failed to load service for quarantine notification")
+		} else if service != nil {
+			serviceName = service.Name
+		}
+	}
+
+	quarantinedBy := "system"
+	quarantinedEvent := &notification.Event{
+		Type:        notification.NotificationTypeTestQuarantined,
+		ServiceID:   run.ServiceID,
+		ServiceName: serviceName,
+		RunID:       &run.ID,
+		FlakyTest: &database.FlakyTest{
+			ServiceID:      run.ServiceID,
+			TestName:       testName,
+			FlakinessScore: flakinessScore,
+			TotalRuns:      totalRuns,
+			FlakyRuns:      flakyRuns,
+			Quarantined:    true,
+			QuarantinedBy:  &quarantinedBy,
+		},
+		Timestamp: time.Now(),
+	}
+
+	if err := s.deps.NotificationService.SendNotification(ctx, quarantinedEvent); err != nil {
+		s.logger.Warn().Err(err).Msg("failed to send quarantine notification")
+	}
 }
 
 func resultStatusFromProto(status conductorv1.TestStatus) database.ResultStatus {

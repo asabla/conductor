@@ -237,6 +237,8 @@ export function TestResultsTable({
     }
 
     // Apply sorting
+    const statusOrder: TestStatus[] = ["failed", "error", "passed", "skipped"];
+
     const sorted = [...filtered].sort((a, b) => {
       let comparison = 0;
 
@@ -245,7 +247,6 @@ export function TestResultsTable({
           comparison = a.testName.localeCompare(b.testName);
           break;
         case "status":
-          const statusOrder: TestStatus[] = ["failed", "error", "passed", "skipped"];
           comparison =
             statusOrder.indexOf(a.status) - statusOrder.indexOf(b.status);
           break;

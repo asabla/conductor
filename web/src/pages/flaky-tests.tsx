@@ -31,6 +31,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import { toast } from "@/components/ui/toast";
 import {
   Table,
   TableBody,
@@ -75,6 +77,12 @@ export function FlakyTestsPage() {
   // History dialog state
   const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [quarantineDialogOpen, setQuarantineDialogOpen] = useState(false);
+  const [quarantineTargetId, setQuarantineTargetId] = useState<string | null>(null);
+  const [quarantineAction, setQuarantineAction] = useState<"quarantine" | "unquarantine">(
+    "quarantine"
+  );
+  const [quarantineReason, setQuarantineReason] = useState("");
 
   // Build API params
   const params: FlakyTestsParams = useMemo(
@@ -149,18 +157,92 @@ export function FlakyTestsPage() {
     [flakyData?.tests, selectedTestId]
   );
 
+  const quarantineTarget = useMemo(
+    () => flakyData?.tests.find((t) => t.testId === quarantineTargetId),
+    [flakyData?.tests, quarantineTargetId]
+  );
+
   // Handlers
+  const openQuarantineDialog = (
+    testId: string,
+    action: "quarantine" | "unquarantine"
+  ) => {
+    setQuarantineTargetId(testId);
+    setQuarantineAction(action);
+    setQuarantineReason("");
+    setQuarantineDialogOpen(true);
+  };
+
   const handleQuarantine = (testId: string) => {
-    quarantineMutation.mutate({ testId });
+    openQuarantineDialog(testId, "quarantine");
   };
 
   const handleUnquarantine = (testId: string) => {
-    unquarantineMutation.mutate(testId);
+    openQuarantineDialog(testId, "unquarantine");
   };
 
   const handleViewHistory = (testId: string) => {
     setSelectedTestId(testId);
     setHistoryDialogOpen(true);
+  };
+
+  const handleConfirmQuarantine = () => {
+    if (!quarantineTargetId) return;
+
+    const targetName = quarantineTarget?.testName ?? "Test";
+
+    if (quarantineAction === "quarantine") {
+      quarantineMutation.mutate(
+        {
+          testId: quarantineTargetId,
+          reason: quarantineReason.trim() || undefined,
+        },
+        {
+          onSuccess: () => {
+            setQuarantineDialogOpen(false);
+            toast({
+              title: "Test quarantined",
+              description: `${targetName} is now quarantined.`,
+              variant: "success",
+            });
+          },
+          onError: (err) => {
+            toast({
+              title: "Failed to quarantine",
+              description: err instanceof Error ? err.message : "Please try again.",
+              variant: "destructive",
+            });
+          },
+        }
+      );
+      return;
+    }
+
+    unquarantineMutation.mutate(quarantineTargetId, {
+      onSuccess: () => {
+        setQuarantineDialogOpen(false);
+        toast({
+          title: "Quarantine removed",
+          description: `${targetName} is active again.`,
+          variant: "success",
+        });
+      },
+      onError: (err) => {
+        toast({
+          title: "Failed to remove quarantine",
+          description: err instanceof Error ? err.message : "Please try again.",
+          variant: "destructive",
+        });
+      },
+    });
+  };
+
+  const handleCloseQuarantineDialog = (open: boolean) => {
+    setQuarantineDialogOpen(open);
+    if (!open) {
+      setQuarantineTargetId(null);
+      setQuarantineReason("");
+    }
   };
 
   // Format date for chart
@@ -445,8 +527,50 @@ export function FlakyTestsPage() {
         </>
       )}
 
-      {/* History Dialog */}
-      <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
+       {/* Quarantine Dialog */}
+       <Dialog open={quarantineDialogOpen} onOpenChange={handleCloseQuarantineDialog}>
+         <DialogContent className="max-w-lg">
+           <DialogHeader>
+             <DialogTitle>
+               {quarantineAction === "quarantine" ? "Quarantine Test" : "Remove Quarantine"}
+             </DialogTitle>
+             <DialogDescription>
+               {quarantineTarget
+                 ? `Test: ${quarantineTarget.testName}`
+                 : "Choose a test to update its quarantine status."}
+             </DialogDescription>
+           </DialogHeader>
+
+           <div className="space-y-4">
+             {quarantineAction === "quarantine" && (
+               <div className="space-y-2">
+                 <span className="text-sm font-medium">Reason (optional)</span>
+                 <Input
+                   value={quarantineReason}
+                   onChange={(event) => setQuarantineReason(event.target.value)}
+                   placeholder="e.g. Flaky in CI under load"
+                 />
+               </div>
+             )}
+
+             <div className="flex justify-end gap-2">
+               <Button variant="outline" onClick={() => handleCloseQuarantineDialog(false)}>
+                 Cancel
+               </Button>
+               <Button
+                 variant={quarantineAction === "quarantine" ? "default" : "outline"}
+                 onClick={handleConfirmQuarantine}
+                 disabled={quarantineMutation.isPending || unquarantineMutation.isPending}
+               >
+                 {quarantineAction === "quarantine" ? "Confirm Quarantine" : "Remove Quarantine"}
+               </Button>
+             </div>
+           </div>
+         </DialogContent>
+       </Dialog>
+
+       {/* History Dialog */}
+       <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -550,12 +674,11 @@ export function FlakyTestsPage() {
                 <Button
                   variant={selectedTest.isQuarantined ? "outline" : "default"}
                   onClick={() => {
-                    if (selectedTest.isQuarantined) {
-                      handleUnquarantine(selectedTest.testId);
-                    } else {
-                      handleQuarantine(selectedTest.testId);
-                    }
+                    const action = selectedTest.isQuarantined
+                      ? "unquarantine"
+                      : "quarantine";
                     setHistoryDialogOpen(false);
+                    openQuarantineDialog(selectedTest.testId, action);
                   }}
                   disabled={quarantineMutation.isPending || unquarantineMutation.isPending}
                 >

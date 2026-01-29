@@ -16,20 +16,25 @@ const (
 
 // TemplateVars contains variables available in notification templates.
 type TemplateVars struct {
-	ServiceName  string
-	ServiceID    string
-	RunID        string
-	Status       string
-	TotalTests   int
-	PassedTests  int
-	FailedTests  int
-	SkippedTests int
-	DurationMs   int64
-	Branch       string
-	CommitSHA    string
-	ErrorMessage string
-	URL          string
-	Timestamp    time.Time
+	ServiceName    string
+	ServiceID      string
+	RunID          string
+	Status         string
+	TotalTests     int
+	PassedTests    int
+	FailedTests    int
+	SkippedTests   int
+	DurationMs     int64
+	Branch         string
+	CommitSHA      string
+	ErrorMessage   string
+	TestName       string
+	FlakinessScore float64
+	FlakyRuns      int
+	TotalRuns      int
+	QuarantinedBy  string
+	URL            string
+	Timestamp      time.Time
 }
 
 // RunStartedTemplate returns a notification for run started events.
@@ -124,8 +129,34 @@ func FlakyDetectedTemplate(vars TemplateVars) (title, message string) {
 
 	var parts []string
 	parts = append(parts, fmt.Sprintf("A flaky test was detected in *%s*.", vars.ServiceName))
+	if vars.TestName != "" {
+		parts = append(parts, fmt.Sprintf("Test: *%s*", vars.TestName))
+	}
+	if vars.TotalRuns > 0 {
+		parts = append(parts, fmt.Sprintf("Flaky runs: %d/%d (%s)", vars.FlakyRuns, vars.TotalRuns, formatFlakiness(vars.FlakinessScore)))
+	}
 	parts = append(parts, "")
 	parts = append(parts, "Flaky tests can cause intermittent failures and should be investigated.")
+
+	message = strings.Join(parts, "\n")
+	return
+}
+
+// TestQuarantinedTemplate returns a notification for quarantined tests.
+func TestQuarantinedTemplate(vars TemplateVars) (title, message string) {
+	title = fmt.Sprintf("Test Quarantined - %s", vars.ServiceName)
+
+	var parts []string
+	parts = append(parts, fmt.Sprintf("A test was quarantined in *%s*.", vars.ServiceName))
+	if vars.TestName != "" {
+		parts = append(parts, fmt.Sprintf("Test: *%s*", vars.TestName))
+	}
+	if vars.TotalRuns > 0 {
+		parts = append(parts, fmt.Sprintf("Flaky runs: %d/%d (%s)", vars.FlakyRuns, vars.TotalRuns, formatFlakiness(vars.FlakinessScore)))
+	}
+	if vars.QuarantinedBy != "" {
+		parts = append(parts, fmt.Sprintf("Quarantined by: %s", vars.QuarantinedBy))
+	}
 
 	message = strings.Join(parts, "\n")
 	return
@@ -197,6 +228,13 @@ func truncateString(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
+func formatFlakiness(score float64) string {
+	if score <= 1 {
+		return fmt.Sprintf("%.1f%%", score*100)
+	}
+	return fmt.Sprintf("%.1f%%", score)
+}
+
 // GetTemplateForType returns the appropriate template function for a notification type.
 func GetTemplateForType(notificationType NotificationType, vars TemplateVars) (title, message string) {
 	switch notificationType {
@@ -210,6 +248,8 @@ func GetTemplateForType(notificationType NotificationType, vars TemplateVars) (t
 		return RunRecoveredTemplate(vars)
 	case NotificationTypeFlakyDetected:
 		return FlakyDetectedTemplate(vars)
+	case NotificationTypeTestQuarantined:
+		return TestQuarantinedTemplate(vars)
 	case NotificationTypeRunTimeout:
 		return RunTimeoutTemplate(vars)
 	case NotificationTypeRunError:

@@ -570,11 +570,13 @@ func TestGRPCServer_AgentRegistration(t *testing.T) {
 	scheduler := &mockWorkScheduler{}
 
 	deps := AgentServiceDeps{
-		AgentRepo:        agentRepo,
-		RunRepo:          runRepo,
-		Scheduler:        scheduler,
-		HeartbeatTimeout: 90 * time.Second,
-		ServerVersion:    "test-1.0.0",
+		AgentRepo:           agentRepo,
+		RunRepo:             runRepo,
+		ServiceRepo:         nil,
+		NotificationService: nil,
+		Scheduler:           scheduler,
+		HeartbeatTimeout:    90 * time.Second,
+		ServerVersion:       "test-1.0.0",
 	}
 
 	// Create gRPC server

@@ -192,6 +192,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}): UseWebSocketRet
   // Handle incoming messages
   const handleMessage = useCallback((event: MessageEvent) => {
     try {
+      if (typeof event.data !== "string") {
+        return;
+      }
+
       const message = JSON.parse(event.data) as WebSocketMessage;
       const handlers = messageHandlersRef.current.get(message.type);
       if (handlers) {
@@ -440,8 +444,8 @@ export function useAgentStatus(options?: { enabled?: boolean }) {
  * Get WebSocket URL based on current location
  */
 function getWebSocketUrl(): string {
-  const wsUrl = import.meta.env.VITE_WS_URL;
-  if (wsUrl) return wsUrl;
+  const wsUrl = import.meta.env.VITE_WS_URL as string | undefined;
+  if (typeof wsUrl === "string" && wsUrl.length > 0) return wsUrl;
 
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const host = window.location.host;

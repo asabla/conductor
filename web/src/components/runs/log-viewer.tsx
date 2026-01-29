@@ -91,7 +91,8 @@ const ANSI_COLORS: Record<string, string> = {
 
 function parseAnsi(text: string): AnsiSegment[] {
   const segments: AnsiSegment[] = [];
-  const regex = /\x1b\[([0-9;]+)m/g;
+  const escapeChar = String.fromCharCode(27);
+  const regex = new RegExp(`${escapeChar}\\[([0-9;]+)m`, "g");
   let lastIndex = 0;
   let currentClasses: string[] = [];
   let match;

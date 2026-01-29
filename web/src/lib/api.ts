@@ -146,22 +146,26 @@ function createApiClient(): AxiosInstance {
         }
 
         // Enhance error with API error details
-        const apiError: ApiError = {
-          message: data?.message || error.message,
-          code: data?.code || `HTTP_${status}`,
-          status,
-          details: data?.details,
-        };
+        const apiError = Object.assign(
+          new Error(data?.message || error.message),
+          {
+            code: data?.code || `HTTP_${status}`,
+            status,
+            details: data?.details,
+          }
+        ) as ApiError & Error;
 
         return Promise.reject(apiError);
       }
 
       // Network or other errors
-      const networkError: ApiError = {
-        message: error.message || "Network error",
-        code: "NETWORK_ERROR",
-        status: 0,
-      };
+      const networkError = Object.assign(
+        new Error(error.message || "Network error"),
+        {
+          code: "NETWORK_ERROR",
+          status: 0,
+        }
+      ) as ApiError & Error;
 
       return Promise.reject(networkError);
     }
